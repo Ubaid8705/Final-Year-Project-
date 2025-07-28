@@ -1,0 +1,55 @@
+.suggestion-post {
+  margin: 10% 5%;
+}
+
+.suggestion-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.95rem;
+  color: #757575;
+  margin-bottom: 2px;
+}
+
+.suggestion-logo {
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  object-fit: cover;
+}
+
+.suggestion-in {
+  font-size: 0.95rem;
+}
+
+.suggestion-author {
+  color: #222;
+  font-weight: 500;
+}
+
+.suggestion-title {
+  font-size: 1.0rem;
+  font-weight: bold;
+  color: #222;
+  margin-bottom: 4px;
+}
+
+.suggestion-footer {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  font-size: 0.98rem;
+  color: #757575;
+  margin-bottom: 2px;
+}
+
+.suggestion-star {
+  color: #f7b500;
+  font-size: 0.85rem; /* Smaller size */
+  vertical-align: middle;
+}
+
+.suggestion-date {
+  font-size: 0.90rem;
+}
+

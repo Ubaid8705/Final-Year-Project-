@@ -1,0 +1,93 @@
+.follow-section {
+  margin: 28px 0 18px 0;
+}
+
+.follow-title {
+  font-weight: 600;
+  font-size: 1.08rem;
+  margin-bottom: 14px;
+  color: #222;
+}
+
+.follow-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 10px 0;
+}
+
+.follow-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.follow-avatar {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  object-fit: cover;
+  margin-top: 2px;
+}
+
+.follow-details {
+  flex: 1;
+  min-width: 0;
+}
+
+.follow-name {
+  font-weight: 600;
+  font-size: 1rem;
+  color: #222;
+  margin-bottom: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.follow-info {
+  font-size: 0.95rem;
+  color: #757575;
+  margin-bottom: 2px;
+}
+
+.follow-desc {
+  font-size: 0.95rem;
+  color: #757575;
+  margin-bottom: 2px;
+}
+
+.follow-btn {
+  background: none;
+  border: 1.5px solid #222;
+  color: #222;
+  border-radius: 22px;
+  padding: 4px 18px;
+  font-size: 1rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+}
+
+.follow-btn:hover {
+  background: #222;
+  color: #fff;
+}
+
+.follow-more {
+  color: #757575;
+  background: none;
+  border: none;
+  font-size: 1rem;
+  margin-top: 6px;
+  cursor: pointer;
+  opacity: 0.8;
+  transition: opacity 0.2s, text-decoration 0.2s;
+  padding: 0;
+  text-align: left;
+}
+
+.follow-more:hover {
+  opacity: 1;
+  text-decoration: underline;
+}
