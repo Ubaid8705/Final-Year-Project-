@@ -1,0 +1,252 @@
+/* Post Container */
+body {
+  display: flex;
+  justify-content: center;
+}
+
+
+h2, h3, h4, h5, h6, p, li{
+    font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+.post-container {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 40px 20px;
+  font-family: "Charter", "Georgia", serif;
+  color: #292929;
+  line-height: 1.6;
+  align-self: center;
+}
+
+/* Header Styles */
+.post-header {
+  margin-bottom: 32px;
+}
+
+.post-title {
+  font-size: 2.5rem;
+  font-weight: 700;
+  line-height: 1.2;
+  margin-bottom: 16px;
+  letter-spacing: -0.016em;
+}
+
+.post-subtitle {
+  font-size: 1.5rem;
+  color: #757575;
+  font-weight: 400;
+  margin-bottom: 24px;
+  line-height: 1.4;
+}
+
+.post-cover-image {
+  margin: 2% 0;
+  width: 100%;
+  background-color: #fafafa;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.post-cover-image img {
+  width: 100%;
+  height: auto;
+  max-height: 400px;
+  object-fit: cover;
+}
+
+/* Content Blocks */
+.post-content {
+  font-size: 1.25rem;
+}
+
+.post-paragraph {
+  margin-bottom: 2rem;
+}
+
+.post-heading-1 {
+  font-size: 2rem;
+  font-weight: 700;
+  margin: 48px 0 24px;
+  letter-spacing: -0.016em;
+}
+
+.post-heading-2 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin: 40px 0 20px;
+  letter-spacing: -0.012em;
+}
+
+/* Image Blocks */
+.post-image-container {
+  margin: 32px auto;
+  max-width: 100%;
+  width: fit-content;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.post-image {
+  max-width: 100%;
+  height: auto;
+  width: auto;
+  max-height: 700px;
+  object-fit: contain;
+}
+
+.post-image-caption {
+  margin-top: 12px;
+  color: #6b6b6b;
+  font-size: 14px;
+  text-align: center;
+  max-width: 680px;
+  width: 100%;
+}
+/* Code Blocks */
+.post-code-block {
+  background: #f8f8f8;
+  padding: 16px 20px;
+  border-radius: 4px;
+  margin: 24px 0;
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, Courier, monospace;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  overflow-x: auto;
+}
+
+/* Loading State */
+.post-loading {
+  text-align: center;
+  padding: 48px 20px;
+  color: #757575;
+  font-size: 1.125rem;
+}
+
+.post-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 0;
+  border-bottom: 1px solid #e5e7eb;
+  margin-bottom: 20px;
+  font-family: 'Inter', sans-serif;
+}
+
+.post-meta-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.post-author-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.post-author-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.post-author-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.post-author-name {
+  font-weight: 600;
+  font-size: 15px;
+}
+
+.post-follow-btn {
+  background: #f9fafb;
+  border: 1px solid #d1d5db;
+  border-radius: 12px;
+  font-size: 13px;
+  padding: 2px 8px;
+  cursor: pointer;
+  color: #333;
+}
+
+.post-follow-btn:hover {
+  background: #f3f4f6;
+}
+
+.post-author-meta {
+  color: #6b7280;
+  font-size: 13px;
+}
+
+.separator {
+  margin: 0 4px;
+}
+
+.post-meta-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.post-meta-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.post-meta-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 16px;
+  color: #6b7280;
+  transition: color 0.2s;
+}
+
+.post-meta-btn:hover {
+  color: #111827;
+}
+
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .post-container {
+    padding: 24px 16px;
+  }
+
+  .post-title {
+    font-size: 2rem;
+  }
+
+  .post-subtitle {
+    font-size: 1.25rem;
+  }
+
+  .post-content {
+    font-size: 1.125rem;
+  }
+
+  .post-cover-image {
+    margin: 24px 0;
+    border-radius: 0;
+  }
+  
+  .post-cover-image img {
+    max-height: 300px;
+  }
+
+  .post-image-container {
+    margin: 24px auto;
+  }
+  
+  .post-image {
+    max-height: 500px;
+  }
+}

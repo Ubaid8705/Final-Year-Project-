@@ -1,0 +1,139 @@
+.page-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 60px 20px;
+  min-height: 100vh;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+}
+
+.auth-container {
+  max-width: 400px;
+  width: 100%;
+  text-align: center;
+}
+
+.auth-header {
+  margin-bottom: 32px;
+}
+
+.auth-icon {
+  font-size: 28px;
+  margin-bottom: 16px;
+}
+
+h1 {
+  font-family: gt-super, Georgia, Cambria, "Times New Roman", Times, serif;
+  font-size: 28px;
+  margin-bottom: 32px;
+  color: rgb(41, 41, 41);
+}
+
+.auth-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.social-btn, .email-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 16px;
+  border-radius: 99px;
+  border: 1px solid rgb(242, 242, 242);
+  background: white;
+  font-size: 14px;
+  color: rgb(41, 41, 41);
+  cursor: pointer;
+  transition: border-color 0.2s;
+}
+
+.social-btn:hover {
+  border-color: rgb(168, 168, 168);
+}
+
+.social-btn img {
+  width: 20px;
+  height: 20px;
+}
+
+form {
+  text-align: left;
+  margin: 24px 0;
+}
+
+label {
+  display: block;
+  font-size: 14px;
+  margin-bottom: 8px;
+  color: rgb(41, 41, 41);
+}
+
+input {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid rgb(242, 242, 242);
+  border-radius: 4px;
+  font-size: 16px;
+  margin-bottom: 16px;
+}
+
+input:focus {
+  outline: none;
+  border-color: rgb(41, 41, 41);
+}
+
+.submit-btn {
+  width: 100%;
+  padding: 8px 16px;
+  background: rgb(41, 41, 41);
+  color: white;
+  border: none;
+  border-radius: 99px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.back-button {
+  background: none;
+  border: none;
+  color: rgb(26, 137, 23);
+  font-size: 14px;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.auth-footer {
+  margin-top: 16px;
+  font-size: 14px;
+  color: rgb(117, 117, 117);
+}
+
+.auth-footer button {
+  background: none;
+  border: none;
+  color: rgb(26, 137, 23);
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.terms {
+  font-size: 13px;
+  color: rgb(117, 117, 117);
+  margin-top: 16px;
+}
+
+.auth-help {
+  margin-top: 16px;
+  font-size: 14px;
+  color: rgb(117, 117, 117);
+}
+
+.auth-help a {
+  color: rgb(26, 137, 23);
+  text-decoration: underline;
+}

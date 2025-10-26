@@ -1,14 +1,28 @@
-import './App.css';
-import Header from './Components/header';
-import LandingPage from './pages/landingpage';
+import React from "react";
+import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
+import Header from "./Components/header";
+import { routes } from "./Routes.Configuration";
 
-function App() {
+function AppRouter() {
+  const location = useLocation();
+  const hideHeader = location.pathname === "/login";
+
   return (
-    <div className="App">
-      <Header />
-      <LandingPage />
-    </div>
+    <>
+      {!hideHeader && <Header />}
+      <Routes>
+        {routes.map((r) => (
+          <Route key={r.path} path={r.path} element={r.element} />
+        ))}
+      </Routes>
+    </>
   );
 }
 
-export default App;
+export default function App() {
+  return (
+    <BrowserRouter>
+      <AppRouter />
+    </BrowserRouter>
+  );
+}
