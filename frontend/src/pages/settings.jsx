@@ -4,9 +4,9 @@ import './settings.css';
 
 export default function Settings() {
   const [activeTab, setActiveTab] = useState("Account");
-  const [email, setEmail] = useState("bilalqamar229@gmail.com");
-  const [displayName] = useState("Bilal Qamar");
-  const [username] = useState("bilalqamar229");
+  const [email, setEmail] = useState("ubaidliaqat03@gmail.com");
+  const [displayName] = useState("Malik Ubaid");
+  const [username] = useState("ubaid8705");
 
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [emailInput, setEmailInput] = useState(email);

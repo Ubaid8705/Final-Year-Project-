@@ -10,13 +10,13 @@ export default function Profile() {
       <div className="profile-main-area">
         <div className="profile-banner">
           <img
-            src={listImg}
+            src="https://images.unsplash.com/photo-1506744038136-46273834b3fb?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxzZWFyY2h8Mnx8Y292ZXJ8ZW58MHx8MHx8fDA%3D&w=1000&q=80"
             alt="cover"
             className="profile-cover"
           />
         </div>
         <div className="profile-main">
-          <h1 className="profile-username">Bilal Qamar</h1>
+          <h1 className="profile-username">Ubaid Malik</h1>
           <div className="profile-tabs">
             <span className="profile-tab active">Home</span>
             <span className="profile-tab">Lists</span>
@@ -26,8 +26,7 @@ export default function Profile() {
           <div className="profile-story">
             <div className="story-title">Introduction</div>
             <div className="story-desc">
-              I am Muhammad Bilal Baig. I have done my graduation in Computer
-              Science from University of Engineering and Technology Lahore.
+              I am Ubaidullah.
             </div>
             <div className="story-footer">
               <div className="story-time">Just now</div>
@@ -63,12 +62,11 @@ export default function Profile() {
           className="profile-avatar-sidebar"
         />
         <div className="profile-sidebar-name">
-          Bilal Qamar <span className="profile-pronoun">he/him</span>
+          Ubaid Malik <span className="profile-pronoun">he/him</span>
         </div>
         <div className="profile-sidebar-followers">1 follower</div>
         <div className="profile-sidebar-bio">
-          I am a Computer Science fresh graduate from University of Engineering
-          and Technology Lahore.
+          I am a Computer Science fresh graduate from NCBA Lahore.
         </div>
         <button className="profile-edit-btn" onClick={() => setShowEdit(true)}>
           Edit profile
@@ -76,7 +74,7 @@ export default function Profile() {
         <div className="profile-lists">
           <div className="profile-list-title">Lists</div>
           <div className="profile-list-item">
-            <img src={listImg} alt="list" className="profile-list-img" />
+            <img src="https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQB2tmDDUAArMs-GzV0YL30xdUNwO9yGRAj4Q&s" alt="list" className="profile-list-img" />
             <div className="profile-list-info">
               <div className="profile-list-name">Reading list</div>
               <div className="profile-list-count">2 stories</div>
@@ -133,7 +131,7 @@ export default function Profile() {
             <input
               className="profile-modal-input"
               type="text"
-              defaultValue="Bilal Qamar"
+              defaultValue="Ubaid Malik"
               maxLength={50}
             />
             <div className="profile-modal-count">11/50</div>
@@ -152,7 +150,7 @@ export default function Profile() {
             <label className="profile-modal-label">Short bio</label>
             <textarea
               className="profile-modal-textarea"
-              defaultValue="I am a Computer Science fresh graduate from University of Engineering and Technology Lahore."
+              defaultValue="I am a Computer Science fresh graduate from NCBA Lahore."
               maxLength={160}
             />
             <div className="profile-modal-count">92/160</div>

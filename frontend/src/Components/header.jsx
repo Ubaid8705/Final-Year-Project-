@@ -18,7 +18,7 @@ function Header() {
 
   return (
     <div className="header">
-      <div className="logo">Medium</div>
+      <div className="logo">BlogsHive</div>
       <div className="search-bar">
         <span className="search-icon">&#128269;</span>
         <input type="search" placeholder="Search" />
