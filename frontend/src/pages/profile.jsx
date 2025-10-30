@@ -66,7 +66,7 @@ export default function Profile() {
         </div>
         <div className="profile-sidebar-followers">1 follower</div>
         <div className="profile-sidebar-bio">
-          I am a Computer Science fresh graduate from NCBA Lahore.
+          I am a Computer Science fresh graduate from NCBA&E Lahore.
         </div>
         <button className="profile-edit-btn" onClick={() => setShowEdit(true)}>
           Edit profile
@@ -131,7 +131,7 @@ export default function Profile() {
             <input
               className="profile-modal-input"
               type="text"
-              defaultValue="Ubaid Malik"
+              defaultValue="Firza Don"
               maxLength={50}
             />
             <div className="profile-modal-count">11/50</div>
