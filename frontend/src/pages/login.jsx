@@ -3,23 +3,106 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import './login.css';
 
-const Login = () => {
- const [view, setView] = useState("welcome"); // welcome, signin, signup, email-signin, email-signup
-  const [email, setEmail] = useState("");
-  const navigate = useNavigate();
-  const { login } = useAuth();
+const INITIAL_FORM = {
+  name: "",
+  username: "",
+  email: "",
+  password: "",
+  confirmPassword: "",
+};
 
-  const handleEmailSubmit = async (e) => {
-    e.preventDefault();
-    if (view === "email-signin" || view === "email-signup") {
-      const ok = await login({ email });
-      if (ok) {
-        // redirect to protected area (adjust path as needed)
-        navigate("/");
-      } else {
-        // show error (replace with UI)
-        alert("Login failed");
+const createEmptyForm = () => ({ ...INITIAL_FORM });
+
+const Login = () => {
+  const [view, setView] = useState("welcome"); // welcome, signup, email-signin, email-signup
+  const [formData, setFormData] = useState(createEmptyForm);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const navigate = useNavigate();
+  const { login, signup } = useAuth();
+
+  const updateView = (nextView) => {
+    setView(nextView);
+    setError("");
+    setNotice("");
+    setSubmitting(false);
+
+    setFormData((current) => {
+      if (nextView === "email-signin") {
+        return {
+          ...createEmptyForm(),
+          email: current.email,
+        };
       }
+
+      if (nextView === "email-signup") {
+        return {
+          ...createEmptyForm(),
+          email: current.email,
+        };
+      }
+
+      return createEmptyForm();
+    });
+  };
+
+  const handleChange = (field) => (event) => {
+    const { value } = event.target;
+    setFormData((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handleEmailSubmit = async (event) => {
+    event.preventDefault();
+    setError("");
+    setNotice("");
+
+    if (submitting) {
+      return;
+    }
+
+    setSubmitting(true);
+
+    try {
+      if (view === "email-signin") {
+        const result = await login({
+          email: formData.email.trim(),
+          password: formData.password,
+        });
+
+        if (result?.error) {
+          setError(result.error);
+          return;
+        }
+
+        navigate("/");
+        return;
+      }
+
+      if (view === "email-signup") {
+        if (formData.password !== formData.confirmPassword) {
+          setError("Passwords do not match");
+          return;
+        }
+
+        const result = await signup({
+          name: formData.name.trim(),
+          username: formData.username.trim(),
+          email: formData.email.trim(),
+          password: formData.password,
+        });
+
+        if (result?.error) {
+          setError(result.error);
+          return;
+        }
+
+        const message = result?.message || "Check your email for the verification code.";
+        updateView("email-signin");
+        setNotice(message);
+      }
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -30,26 +113,78 @@ const Login = () => {
         <h1>{title}</h1>
       </div>
       <form onSubmit={handleEmailSubmit}>
+        {view === "email-signup" && (
+          <>
+            <label>Your name</label>
+            <input
+              type="text"
+              value={formData.name}
+              onChange={handleChange("name")}
+              placeholder="How should we address you?"
+              required
+            />
+            <label>Username</label>
+            <input
+              type="text"
+              value={formData.username}
+              onChange={handleChange("username")}
+              placeholder="Pick a unique username"
+              required
+            />
+          </>
+        )}
         <label>Your email</label>
         <input
           type="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
+          value={formData.email}
+          onChange={handleChange("email")}
           placeholder="Enter your email address"
+          autoComplete="email"
+          required
         />
-        <button type="submit" className="submit-btn">
-          {view === 'email-signup' ? 'Create account' : 'Continue'}
+        <label>Password</label>
+        <input
+          type="password"
+          value={formData.password}
+          onChange={handleChange("password")}
+          placeholder="Enter your password"
+          autoComplete={view === "email-signup" ? "new-password" : "current-password"}
+          required
+        />
+        {view === "email-signup" && (
+          <>
+            <label>Confirm password</label>
+            <input
+              type="password"
+              value={formData.confirmPassword}
+              onChange={handleChange("confirmPassword")}
+              placeholder="Re-enter your password"
+              autoComplete="new-password"
+              required
+            />
+          </>
+        )}
+        {error && (
+          <div className="status-message error">{error}</div>
+        )}
+        {notice && (
+          <div className="status-message success">{notice}</div>
+        )}
+        <button type="submit" className="submit-btn" disabled={submitting}>
+          {submitting
+            ? (view === "email-signup" ? "Creating..." : "Signing in...")
+            : view === "email-signup" ? "Create account" : "Continue"}
         </button>
       </form>
-      <button 
+      <button
         className="back-button"
-        onClick={() => setView(view.includes('signup') ? 'signup' : 'welcome')}
+        onClick={() => updateView(view.includes("signup") ? "signup" : "welcome")}
       >
-        Back to sign {view.includes('signup') ? 'up' : 'in'} options
+        Back to sign {view.includes("signup") ? "up" : "in"} options
       </button>
-      {view === 'email-signup' && (
+      {view === "email-signup" && (
         <div className="auth-footer">
-          <p>Already have an account? <button onClick={() => setView('welcome')}>Sign in</button></p>
+          <p>Already have an account? <button onClick={() => updateView("welcome")}>Sign in</button></p>
           <p className="terms">
             By clicking "Create Account", you agree to Medium's Terms of Service and acknowledge our Privacy Policy
           </p>
@@ -70,13 +205,13 @@ const Login = () => {
         </button>
         <button
           className="email-btn"
-          onClick={() => setView("email-signin")}
+          onClick={() => updateView("email-signin")}
         >
           <span>✉️</span> Sign in with email
         </button>
       </div>
       <p className="auth-footer">
-        No account? <button onClick={() => setView("signup")}>Create one</button>
+        No account? <button onClick={() => updateView("signup")}>Create one</button>
       </p>
       <p className="auth-help">
         Forgot email or trouble signing in?{" "}
@@ -99,18 +234,18 @@ const Login = () => {
         </button>
         <button 
           className="email-btn"
-          onClick={() => setView('email-signup')}
+          onClick={() => updateView('email-signup')}
         >
           <span>✉️</span> Sign up with email
         </button>
       </div>
       <p className="auth-footer">
-        Already have an account? <button onClick={() => setView('welcome')}>Sign in</button>
+        Already have an account? <button onClick={() => updateView('welcome')}>Sign in</button>
       </p>
     </div>
   );
 
- return (
+  return (
     <div className="page-container">
       {view === "welcome" && renderWelcomeScreen()}
       {view === "signup" && renderSignupScreen()}
