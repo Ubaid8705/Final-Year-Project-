@@ -5,7 +5,7 @@ import { routes } from "./Routes.Configuration";
 
 function AppRouter() {
   const location = useLocation();
-  const hideHeader = location.pathname === "/login";
+  const hideHeader = ["/login", "/auth/callback"].includes(location.pathname);
 
   return (
     <>

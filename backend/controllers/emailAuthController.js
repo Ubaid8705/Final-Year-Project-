@@ -104,13 +104,17 @@ export const login = async (req, res) => {
       { expiresIn: '24h' }
     );
 
+    user.lastLogin = new Date();
+    await user.save();
+
     res.json({
       token,
       user: {
         id: user._id,
         email: user.email,
         username: user.username,
-        name: user.name
+        name: user.name,
+        lastLogin: user.lastLogin,
       }
     });
   } catch (error) {

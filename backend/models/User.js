@@ -23,6 +23,7 @@ const userSchema = new mongoose.Schema({
   customDomainState: { type: String },
   membershipStatus: { type: Boolean, default: false },
   createdAt: { type: Date, default: Date.now },
+  lastLogin: { type: Date },
 
   linkedAccounts: {
     type: mongoose.Schema.Types.ObjectId,

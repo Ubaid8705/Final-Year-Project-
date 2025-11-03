@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
+import { API_BASE_URL } from "../config";
 import './login.css';
 
 const INITIAL_FORM = {
@@ -20,7 +21,17 @@ const Login = () => {
   const [notice, setNotice] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const navigate = useNavigate();
-  const { login, signup } = useAuth();
+  const { user, loading, login, signup } = useAuth();
+
+  useEffect(() => {
+    if (!loading && user) {
+      navigate('/', { replace: true });
+    }
+  }, [user, loading, navigate]);
+
+  const redirectToOAuth = (provider) => {
+    window.location.href = `${API_BASE_URL}/auth/${provider}`;
+  };
 
   const updateView = (nextView) => {
     setView(nextView);
@@ -197,10 +208,10 @@ const Login = () => {
     <div className="auth-container">
       <h1>Welcome back.</h1>
       <div className="auth-buttons">
-        <button className="social-btn google">
+        <button className="social-btn google" onClick={() => redirectToOAuth("google")}>
           <img src="/google-icon.png" alt="" /> Sign in with Google
         </button>
-        <button className="social-btn facebook">
+        <button className="social-btn facebook" onClick={() => redirectToOAuth("facebook")}>
           <img src="/facebook-icon.png" alt="" /> Sign in with Facebook
         </button>
         <button
@@ -226,10 +237,10 @@ const Login = () => {
     <div className="auth-container">
       <h1>Join Medium.</h1>
       <div className="auth-buttons">
-        <button className="social-btn google">
+        <button className="social-btn google" onClick={() => redirectToOAuth("google")}>
           <img src="/google-icon.png" alt="" /> Sign up with Google
         </button>
-        <button className="social-btn facebook">
+        <button className="social-btn facebook" onClick={() => redirectToOAuth("facebook")}>
           <img src="/facebook-icon.png" alt="" /> Sign up with Facebook
         </button>
         <button 

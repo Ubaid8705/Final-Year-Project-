@@ -31,25 +31,62 @@ const readJson = async (response) => {
   }
 };
 
+const base64UrlDecode = (input) => {
+  try {
+    const padded = `${input.replace(/-/g, "+").replace(/_/g, "/")}${"=".repeat((4 - (input.length % 4)) % 4)}`;
+    if (typeof atob === "function") {
+      return decodeURIComponent(
+        Array.prototype.map
+          .call(atob(padded), (c) => `%${(`00${c.charCodeAt(0).toString(16)}`).slice(-2)}`)
+          .join("")
+      );
+    }
+    if (typeof Buffer === "function") {
+      return Buffer.from(padded, "base64").toString("utf-8");
+    }
+  } catch (error) {
+    console.warn("Failed to decode base64 payload", error);
+  }
+
+  return null;
+};
+
+const extractTokenPayload = (token) => {
+  if (!token) {
+    return null;
+  }
+
+  const parts = token.split(".");
+  if (parts.length < 2) {
+    return null;
+  }
+
+  const decoded = base64UrlDecode(parts[1]);
+  if (!decoded) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(decoded);
+  } catch (error) {
+    console.warn("Failed to parse token payload", error);
+    return null;
+  }
+};
+
+const isTokenExpired = (token) => {
+  const payload = extractTokenPayload(token);
+  if (!payload?.exp) {
+    return false;
+  }
+  const expiresAt = payload.exp * 1000;
+  return Date.now() >= expiresAt;
+};
+
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [token, setToken] = useState(null);
   const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const storedToken = localStorage.getItem(STORAGE_TOKEN_KEY);
-    const storedUserRaw = localStorage.getItem(STORAGE_USER_KEY);
-
-    if (storedToken && storedUserRaw) {
-      const storedUser = parseStoredUser(storedUserRaw);
-      if (storedUser) {
-        setUser(storedUser);
-        setToken(storedToken);
-      }
-    }
-
-    setLoading(false);
-  }, []);
 
   const persistAuth = (nextToken, nextUser) => {
     localStorage.setItem(STORAGE_TOKEN_KEY, nextToken);
@@ -64,6 +101,25 @@ export const AuthProvider = ({ children }) => {
     setToken(null);
     setUser(null);
   };
+
+  useEffect(() => {
+    const storedToken = localStorage.getItem(STORAGE_TOKEN_KEY);
+    const storedUserRaw = localStorage.getItem(STORAGE_USER_KEY);
+
+    if (storedToken && storedUserRaw) {
+      if (isTokenExpired(storedToken)) {
+        clearAuth();
+      } else {
+        const storedUser = parseStoredUser(storedUserRaw);
+        if (storedUser) {
+          setUser(storedUser);
+          setToken(storedToken);
+        }
+      }
+    }
+
+    setLoading(false);
+  }, []);
 
   const login = async ({ email, password }) => {
     try {
@@ -83,6 +139,10 @@ export const AuthProvider = ({ children }) => {
 
       if (!payload?.token || !payload?.user) {
         return { error: "Login response is missing required fields" };
+      }
+
+      if (isTokenExpired(payload.token)) {
+        return { error: "Received an expired session token" };
       }
 
       persistAuth(payload.token, payload.user);
@@ -118,13 +178,43 @@ export const AuthProvider = ({ children }) => {
     clearAuth();
   };
 
+  const completeOAuthLogin = ({ token: nextToken, user: nextUser }) => {
+    if (!nextToken || !nextUser) {
+      return { error: "Missing token or user details from OAuth response" };
+    }
+
+    if (isTokenExpired(nextToken)) {
+      return { error: "Received an expired session token" };
+    }
+
+    let resolvedUser = nextUser;
+
+    if (typeof resolvedUser === "string") {
+      try {
+        resolvedUser = JSON.parse(resolvedUser);
+      } catch (error) {
+        console.warn("Failed to parse OAuth user payload", error);
+        return { error: "Unable to process user details from OAuth response" };
+      }
+    }
+
+    if (!resolvedUser) {
+      return { error: "Unable to process user details from OAuth response" };
+    }
+
+    persistAuth(nextToken, resolvedUser);
+    return { user: resolvedUser, token: nextToken };
+  };
+
   const value = {
     user,
     token,
     loading,
+    isTokenExpired,
     login,
     signup,
     logout,
+    completeOAuthLogin,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
