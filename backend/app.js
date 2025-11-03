@@ -5,6 +5,9 @@ import cors from 'cors';
 import passportConfig from './auth/passport.js';  // Import passport configuration function
 import authRoutes from './routes/auth.js';
 import userRoutes from './routes/user.js';
+import postsRoutes from './routes/posts.js';
+import commentsRoutes from './routes/comments.js';
+import settingsRoutes from './routes/settings.js';
 
 const app = express();
 
@@ -35,7 +38,9 @@ passportConfig(passport);
 // Routes
 app.use('/auth', authRoutes);
 app.use('/api/users', userRoutes);
-// Note: posts routes not present in this workspace; add post routes import if/when created
+app.use('/api/posts', postsRoutes);
+app.use('/api/comments', commentsRoutes);
+app.use('/api/settings', settingsRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {
