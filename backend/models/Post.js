@@ -1,78 +1,110 @@
-const mongoose = require("mongoose");
+import mongoose from "mongoose";
 
-const MarkupSchema = new mongoose.Schema({
-  type: { type: String }, // e.g. 'A', 'B', 'EM' for link/bold/italic
-  start: Number,
-  end: Number,
-  href: String
-}, { _id: false });
-
-const ContentBlockSchema = new mongoose.Schema({
-  type: { 
-    type: String, 
-    enum: [
-      'P',        // Paragraph
-      'H1', 'H2', 'H3', // Headings
-      'BQ',       // Blockquote
-      'IMG',      // Image
-      'VIDEO',    // Video
-      'CODE',     // Code block
-      'UL', 'OL', // Lists
-      'DIVIDER'   // Horizontal divider
-    ], 
-    required: true 
+const MarkupSchema = new mongoose.Schema(
+  {
+    type: { type: String, trim: true },
+    start: { type: Number },
+    end: { type: Number },
+    href: { type: String, trim: true },
   },
-  text: String,
+  { _id: false }
+);
 
-  image: {
-    url: String,
-    alt: String,
-    width: Number,
-    height: Number
+const ListItemSchema = new mongoose.Schema(
+  {
+    text: { type: String, trim: true },
+    markups: [MarkupSchema],
   },
+  { _id: false }
+);
 
-  video: {
-    url: String, 
-    caption: String,
-    platform: { type: String, enum: ['YOUTUBE', 'VIMEO', 'UPLOAD'], default: 'UPLOAD' }
+const ContentBlockSchema = new mongoose.Schema(
+  {
+    type: {
+      type: String,
+      enum: [
+        "P",
+        "H1",
+        "H2",
+        "H3",
+        "BQ",
+        "BLOCKQUOTE",
+        "IMG",
+        "VIDEO",
+        "CODE",
+        "UL",
+        "OL",
+        "DIVIDER",
+      ],
+      required: true,
+      uppercase: true,
+      trim: true,
+    },
+    text: { type: String },
+    markups: [MarkupSchema],
+    image: {
+      url: { type: String, trim: true },
+      alt: { type: String, trim: true },
+      width: { type: Number },
+      height: { type: Number },
+      caption: { type: String, trim: true },
+    },
+    video: {
+      url: { type: String, trim: true },
+      caption: { type: String, trim: true },
+      platform: {
+        type: String,
+        enum: ["YOUTUBE", "VIMEO", "UPLOAD"],
+        default: "UPLOAD",
+      },
+      thumbnail: { type: String, trim: true },
+      width: { type: Number },
+      height: { type: Number },
+    },
+    items: [ListItemSchema],
+    codeBlock: { type: String },
   },
-
-  listItems: [String], // for UL or OL blocks
-
-  markups: [MarkupSchema]
-}, { _id: false });
-
+  { _id: false }
+);
 
 const PostSchema = new mongoose.Schema(
   {
-    _id: { type: String, required: true },
-    userId: { type: String, ref: "User", required: true },
-    title: { type: String, required: true },
-    subtitle: String,
-    slug: { type: String, unique: true },
     author: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: true,
     },
+    title: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    subtitle: { type: String, trim: true },
+    slug: {
+      type: String,
+      unique: true,
+      index: true,
+      trim: true,
+    },
     content: [ContentBlockSchema],
-    tags: [String],
-    coverImage: String,
-    readingTime: Number,
-    wordCount: Number,
+    tags: [{ type: String, trim: true, lowercase: true }],
+    coverImage: { type: String, trim: true },
+    readingTime: { type: Number },
+    wordCount: { type: Number },
     clapCount: { type: Number, default: 0 },
-    mediumUrl: { type: String },
+    responseCount: { type: Number, default: 0 },
+    mediumUrl: { type: String, trim: true },
     isPublished: { type: Boolean, default: false },
     isLocked: { type: Boolean, default: false },
     allowResponses: { type: Boolean, default: true },
-    publishedAt: Date,
+    publishedAt: { type: Date },
     visibility: {
       type: String,
-      enum: ["PUBLIC", "PRIVATE"],
+      enum: ["PUBLIC", "PRIVATE", "UNLISTED"],
       default: "PUBLIC",
     },
   },
   { timestamps: true }
 );
 
-module.exports = mongoose.model("Post", PostSchema);
+export default mongoose.model("Post", PostSchema);

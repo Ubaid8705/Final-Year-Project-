@@ -1,28 +1,29 @@
-const mongoose = require("mongoose");
+import mongoose from "mongoose";
 
 const userSettingsSchema = new mongoose.Schema(
   {
     user: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "User", // Reference to your main User model
+      ref: "User",
       required: true,
-      unique: true, // One settings document per user
+      unique: true,
     },
-
-    // ACCOUNT SETTINGS
     email: {
       type: String,
       required: true,
+      lowercase: true,
+      trim: true,
     },
     username: {
       type: String,
       required: true,
+      trim: true,
+      lowercase: true,
     },
     displayName: {
       type: String,
+      trim: true,
     },
-
-    // PUBLISHING SETTINGS
     visibility: {
       type: String,
       enum: ["Public", "Unlisted", "Private"],
@@ -40,6 +41,7 @@ const userSettingsSchema = new mongoose.Schema(
     signature: {
       type: String,
       default: "Thank you for reading!",
+      trim: true,
     },
     autoSave: {
       type: Boolean,
@@ -48,9 +50,8 @@ const userSettingsSchema = new mongoose.Schema(
     analyticsId: {
       type: String,
       default: "",
+      trim: true,
     },
-
-    // ADDITIONAL SETTINGS
     digestFrequency: {
       type: String,
       enum: ["Daily", "Weekly", "Monthly"],
@@ -59,6 +60,7 @@ const userSettingsSchema = new mongoose.Schema(
     membership: {
       type: String,
       default: "None",
+      trim: true,
     },
   },
   { timestamps: true }
