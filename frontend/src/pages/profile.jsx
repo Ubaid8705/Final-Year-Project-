@@ -1,177 +1,149 @@
-import React from "react";
-import { useState } from "react";
-import listImg from "../resources/list.jpg";
+import React, { useMemo, useState } from "react";
+import Post from "../Components/post";
+import { useAuth } from "../contexts/AuthContext";
+import { mockPosts } from "../mocks/posts";
 import "./profile.css";
 
-export default function Profile() {
-  const [showEdit, setShowEdit] = useState(false);
+const COVER_FALLBACK =
+  "https://images.unsplash.com/photo-1489515217757-5fd1be406fef?auto=format&fit=crop&w=1440&q=80";
+const buildFallbackAvatar = (seed) =>
+  `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(seed || "Reader")}`;
+
+const Profile = () => {
+  const { user } = useAuth();
+  const [activeTab, setActiveTab] = useState("home");
+
+  const displayName = user?.name || user?.username || "Your profile";
+  const pronouns = Array.isArray(user?.pronouns) && user.pronouns.length > 0 ? user.pronouns.join("/") : "he/him";
+  const bio = user?.bio || "Share a short introduction so readers know what to expect from you.";
+  const location = user?.location || "Lahore, Pakistan";
+  const followers = user?.followersCount ?? 1;
+  const following = user?.followingCount ?? 0;
+  const avatar = user?.avatar || buildFallbackAvatar(displayName);
+  const coverImage = user?.coverImage || COVER_FALLBACK;
+
+  const featureLists = useMemo(
+    () => [
+      {
+        id: "reading",
+        title: "Reading list",
+        count: 3,
+        cover:
+          "https://images.unsplash.com/photo-1463320726281-696a485928c7?auto=format&fit=crop&w=320&q=80",
+      },
+      {
+        id: "design",
+        title: "Design inspiration",
+        count: 5,
+        cover:
+          "https://images.unsplash.com/photo-1521737604893-d14cc237f11d?auto=format&fit=crop&w=320&q=80",
+      },
+    ],
+    []
+  );
+
+  const recentPosts = useMemo(() => mockPosts.slice(0, 4), []);
+
   return (
-    <div className="profile-container">
-      <div className="profile-main-area">
-        <div className="profile-banner">
-          <img
-            src="https://images.unsplash.com/photo-1506744038136-46273834b3fb?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxzZWFyY2h8Mnx8Y292ZXJ8ZW58MHx8MHx8fDA%3D&w=1000&q=80"
-            alt="cover"
-            className="profile-cover"
-          />
-        </div>
-        <div className="profile-main">
-          <h1 className="profile-username">Ubaid Malik</h1>
-          <div className="profile-tabs">
-            <span className="profile-tab active">Home</span>
-            <span className="profile-tab">Lists</span>
-            <span className="profile-tab">About</span>
-          </div>
-          <hr />
-          <div className="profile-story">
-            <div className="story-title">Introduction</div>
-            <div className="story-desc">
-              I am Ubaidullah.
-            </div>
-            <div className="story-footer">
-              <div className="story-time">Just now</div>
-              <div className="story-actions">
-                {/* Save post icon */}
-                <span title="Save post">
-                  <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
-                    <path
-                      d="M6 3h10a1 1 0 0 1 1 1v15l-6-4-6 4V4a1 1 0 0 1 1-1z"
-                      stroke="#757575"
-                      strokeWidth="2"
-                      fill="none"
-                    />
-                  </svg>
-                </span>
-                {/* Horizontal 3-dot icon */}
-                <span title="More options">
-                  <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
-                    <circle cx="6" cy="11" r="1.5" fill="#757575" />
-                    <circle cx="11" cy="11" r="1.5" fill="#757575" />
-                    <circle cx="16" cy="11" r="1.5" fill="#757575" />
-                  </svg>
-                </span>
+    <div className="profile-page">
+      <div className="profile-hero">
+        <img src={coverImage} alt="Profile banner" />
+        <div className="profile-hero__overlay" />
+      </div>
+      <div className="profile-shell">
+        <main className="profile-main">
+          <section className="profile-header-card">
+            <div className="profile-header-card__grid">
+              <div className="profile-header-card__primary">
+                <h1>{displayName}</h1>
+                <p className="profile-header-card__intro">{bio}</p>
+                <div className="profile-header-card__meta">
+                  <span>{pronouns}</span>
+                  <span>{location}</span>
+                  <span>
+                    <strong>{followers}</strong> follower{followers === 1 ? "" : "s"}
+                  </span>
+                  <span>
+                    <strong>{following}</strong> following
+                  </span>
+                </div>
+              </div>
+              <div className="profile-header-card__actions">
+                <button type="button" className="profile-button primary">
+                  Edit profile
+                </button>
+                <button type="button" className="profile-button ghost">
+                  Share profile
+                </button>
               </div>
             </div>
-          </div>
-        </div>
-      </div>
-      <div className="profile-sidebar">
-        <img
-          src="https://randomuser.me/api/portraits/men/32.jpg"
-          alt="avatar"
-          className="profile-avatar-sidebar"
-        />
-        <div className="profile-sidebar-name">
-          Ubaid Malik <span className="profile-pronoun">he/him</span>
-        </div>
-        <div className="profile-sidebar-followers">1 follower</div>
-        <div className="profile-sidebar-bio">
-          I am a Computer Science fresh graduate from NCBA&E Lahore.
-        </div>
-        <button className="profile-edit-btn" onClick={() => setShowEdit(true)}>
-          Edit profile
-        </button>
-        <div className="profile-lists">
-          <div className="profile-list-title">Lists</div>
-          <div className="profile-list-item">
-            <img src="https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQB2tmDDUAArMs-GzV0YL30xdUNwO9yGRAj4Q&s" alt="list" className="profile-list-img" />
-            <div className="profile-list-info">
-              <div className="profile-list-name">Reading list</div>
-              <div className="profile-list-count">2 stories</div>
-            </div>
-          </div>
-          <div className="profile-list-viewall">View All</div>
-        </div>
-        <div className="profile-footer-links">
-          <span>Help</span>
-          <span>About</span>
-          <span>Blog</span>
-          <span>Privacy</span>
-          <span>Rules</span>
-          <span>Terms</span>
-        </div>
-      </div>
-      {showEdit && (
-        <div className="profile-modal-overlay">
-          <div className="profile-modal">
-            <span
-              className="profile-modal-close"
-              onClick={() => setShowEdit(false)}
-              title="Close"
-            >
-              &#10005;
-            </span>
-            <h2 className="profile-modal-title">Profile information</h2>
-            <div className="profile-modal-photo">
-              <img
-                src="https://randomuser.me/api/portraits/men/32.jpg"
-                alt="avatar"
-                className="profile-modal-avatar"
-              />
-              <div className="profile-modal-photo-actions">
-                <div
-                  style={{
-                    display: "flex",
-                    flexDirection: "row",
-                    gap: "1vw",
-                    marginBottom: "1vh",
-                    marginLeft: "1vw",
-                  }}
+            <nav className="profile-tabs">
+              {[
+                { id: "home", label: "Home" },
+                { id: "lists", label: "Lists" },
+                { id: "about", label: "About" },
+              ].map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  className={`profile-tab${activeTab === tab.id ? " profile-tab--active" : ""}`}
+                  onClick={() => setActiveTab(tab.id)}
                 >
-                  <span className="profile-modal-update">Update</span>
-                  <span className="profile-modal-remove">Remove</span>
-                </div>
-                <div className="profile-modal-photo-desc">
-                  Recommended: Square JPG, PNG, or GIF, at least 1,000 pixels
-                  per side.
-                </div>
-              </div>
+                  {tab.label}
+                </button>
+              ))}
+            </nav>
+          </section>
+
+          <section className="profile-feed">
+            {recentPosts.map((post) => (
+              <Post key={post.id} post={post} variant="profile" />
+            ))}
+          </section>
+        </main>
+
+        <aside className="profile-aside">
+          <div className="profile-card">
+            <img src={avatar} alt={displayName} className="profile-card__avatar" />
+            <div className="profile-card__details">
+              <h2>{displayName}</h2>
+              <p className="profile-card__role">{pronouns}</p>
+              <p className="profile-card__bio">{bio}</p>
             </div>
-            <label className="profile-modal-label">Name*</label>
-            <input
-              className="profile-modal-input"
-              type="text"
-              defaultValue="Firza Don"
-              maxLength={50}
-            />
-            <div className="profile-modal-count">11/50</div>
-            <label className="profile-modal-label">Pronouns</label>
-            <div className="profile-modal-pronouns">
-              <span className="profile-modal-pronoun">he</span>
-              <span className="profile-modal-pronoun">him</span>
-              <input
-                className="profile-modal-input"
-                type="text"
-                placeholder="Add..."
-                maxLength={10}
-              />
-            </div>
-            <div className="profile-modal-count">2/4</div>
-            <label className="profile-modal-label">Short bio</label>
-            <textarea
-              className="profile-modal-textarea"
-              defaultValue="I am a Computer Science fresh graduate from NCBA Lahore."
-              maxLength={160}
-            />
-            <div className="profile-modal-count">92/160</div>
-            <label className="profile-modal-label">About Page</label>
-            <div className="profile-modal-about">
-              Personalize with images and more to paint more of a vivid portrait
-              of yourself than your 'Short bio'.
-              <span className="profile-modal-edit-about">&#9998;</span>
-            </div>
-            <div className="profile-modal-actions">
-              <button
-                className="profile-modal-cancel"
-                onClick={() => setShowEdit(false)}
-              >
-                Cancel
-              </button>
-              <button className="profile-modal-save">Save</button>
-            </div>
+            <button type="button" className="profile-button full">
+              Edit profile
+            </button>
           </div>
-        </div>
-      )}
+
+          <div className="profile-card">
+            <h3 className="profile-card__heading">Lists</h3>
+            <div className="profile-list-grid">
+              {featureLists.map((item) => (
+                <article className="profile-list-card" key={item.id}>
+                  <img src={item.cover} alt={item.title} />
+                  <div>
+                    <h4>{item.title}</h4>
+                    <p>{item.count} stor{item.count === 1 ? "y" : "ies"}</p>
+                  </div>
+                </article>
+              ))}
+            </div>
+            <button type="button" className="profile-button ghost full">
+              View all lists
+            </button>
+          </div>
+
+          <div className="profile-links">
+            {["Help", "About", "Blog", "Privacy", "Terms", "Text to speech"].map((link) => (
+              <button key={link} type="button">
+                {link}
+              </button>
+            ))}
+          </div>
+        </aside>
+      </div>
     </div>
   );
-}
+};
+
+export default Profile;

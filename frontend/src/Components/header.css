@@ -79,6 +79,22 @@
   gap: 6px;
 }
 
+.login-btn {
+  padding: 8px 18px;
+  border-radius: 9999px;
+  border: 1px solid #1a8917;
+  background: transparent;
+  color: #1a8917;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s, color 0.2s;
+}
+
+.login-btn:hover {
+  background-color: #1a8917;
+  color: #fff;
+}
+
 .write-icon {
   font-size: 1.1rem;
 }

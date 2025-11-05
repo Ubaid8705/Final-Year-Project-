@@ -1,9 +1,22 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { useAuth } from "../contexts/AuthContext";
 import "./header.css";
+
+const buildFallbackAvatar = (seed) =>
+  `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(seed || "Reader")}`;
 
 function Header() {
   const [showMenu, setShowMenu] = useState(false);
   const menuRef = useRef();
+  const navigate = useNavigate();
+  const { user, logout } = useAuth();
+
+  const isAuthenticated = Boolean(user);
+  const displayName = user?.name || user?.username || "Reader";
+  const displayEmail = user?.email || "";
+  const fallbackAvatar = buildFallbackAvatar(displayName);
+  const [avatarSrc, setAvatarSrc] = useState(user?.avatar || fallbackAvatar);
 
   // Close menu when clicking outside
   useEffect(() => {
@@ -16,6 +29,37 @@ function Header() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  useEffect(() => {
+    setAvatarSrc(user?.avatar || fallbackAvatar);
+  }, [user, fallbackAvatar]);
+
+  const toggleMenu = () => {
+    if (!isAuthenticated) {
+      navigate("/login");
+      return;
+    }
+    setShowMenu((prev) => !prev);
+  };
+
+  const handleAvatarError = () => {
+    setAvatarSrc(fallbackAvatar);
+  };
+
+  const handleWrite = () => {
+    navigate(isAuthenticated ? "/write" : "/login");
+  };
+
+  const handleViewProfile = () => {
+    setShowMenu(false);
+    navigate(isAuthenticated ? "/profile" : "/login");
+  };
+
+  const handleLogout = () => {
+    logout();
+    setShowMenu(false);
+    navigate("/login");
+  };
+
   return (
     <div className="header">
       <div className="logo">BlogsHive</div>
@@ -24,30 +68,36 @@ function Header() {
         <input type="search" placeholder="Search" />
       </div>
       <div className="header-actions">
-        <button className="write-btn">
+        <button className="write-btn" onClick={handleWrite}>
           <span className="write-icon">&#9998;</span> Write
         </button>
-        <span className="bell-icon">&#128276;</span>
-        <img
-          className="avatar"
-          src="https://randomuser.me/api/portraits/men/32.jpg"
-          alt="avatar"
-          onClick={() => setShowMenu((prev) => !prev)}
-          style={{ cursor: "pointer" }}
-        />
-        {showMenu && (
+        {isAuthenticated && <span className="bell-icon">&#128276;</span>}
+        {isAuthenticated ? (
+          <img
+            className="avatar"
+            src={avatarSrc}
+            alt="avatar"
+            onClick={toggleMenu}
+            onError={handleAvatarError}
+            style={{ cursor: "pointer" }}
+          />
+        ) : (
+          <button className="login-btn" onClick={() => navigate("/login")}>Sign in</button>
+        )}
+        {isAuthenticated && showMenu && (
           <div className="profile-menu" ref={menuRef}>
             <div className="profile-top">
               <img
                 className="profile-avatar"
-                src="https://randomuser.me/api/portraits/men/32.jpg"
+                src={avatarSrc}
                 alt="avatar"
+                onError={handleAvatarError}
               />
               <div>
-                <div className="profile-name">Bilal Qamar</div>
+                <div className="profile-name">{displayName}</div>
                 <div
                   className="profile-view clickable"
-                  onClick={() => alert("View profile clicked!")}
+                  onClick={handleViewProfile}
                   tabIndex={0}
                   role="button"
                   style={{
@@ -59,7 +109,7 @@ function Header() {
               </div>
             </div>
             <div className="profile-links-container">
-              <div className="profile-link">
+              <div className="profile-link" onClick={handleWrite}>
                 <span>&#9998;</span> Write
               </div>
               <div className="profile-link">
@@ -81,8 +131,10 @@ function Header() {
             </div>
             <div className="profile-divider"></div>
             <div className="profile-signout">
-              <div className="profile-link">Sign out</div>
-              <div className="profile-email">bi*********@gmail.com</div>
+              <div className="profile-link" onClick={handleLogout}>
+                Sign out
+              </div>
+              {displayEmail && <div className="profile-email">{displayEmail}</div>}
             </div>
             <div className="profile-footer">
               <span className="profile-footer-link">About</span>

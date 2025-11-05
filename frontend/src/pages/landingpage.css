@@ -51,6 +51,12 @@
   transition: color 0.2s;
 }
 
+.posts-status {
+  margin: 16px 0;
+  color: #757575;
+  font-size: 0.95rem;
+}
+
 .filter-btn.active,
 .filter-btn:hover {
   color: #1a8917;

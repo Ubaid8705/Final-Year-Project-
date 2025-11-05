@@ -1,12 +1,52 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import Post from "../Components/post";
 import "./landingpage.css";
 import Suggesstion from "../Components/Suggesstion";
 import Recomendations from "../Components/recomendations";
 import FollowSuggestions from "../Components/followsuggestions";
+import { API_BASE_URL } from "../config";
+import { mockPosts } from "../mocks/posts";
 
 const LandingPage = () => {
   const [showInfoBox, setShowInfoBox] = useState(true);
+  const [posts, setPosts] = useState(mockPosts);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const fetchPosts = async () => {
+      setLoading(true);
+      setError(null);
+
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/posts?limit=10`);
+        if (!response.ok) {
+          throw new Error("Failed to load stories");
+        }
+
+        const payload = await response.json();
+        if (!cancelled && Array.isArray(payload?.items) && payload.items.length > 0) {
+          setPosts(payload.items);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(err.message || "Unable to load stories");
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    };
+
+    fetchPosts();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   return (
     <div className="landing-container">
@@ -21,11 +61,15 @@ const LandingPage = () => {
           <button className="filter-btn">Data Science</button>
           <button className="filter-btn">Programming</button>
         </div>
-        <Post />
-        <Post />
-        <Post />
-        <Post />
-        <Post />
+        {loading && <p className="posts-status">Loading stories…</p>}
+        {error && !loading && (
+          <p className="posts-status" role="alert">
+            {error}. Showing highlights instead.
+          </p>
+        )}
+        {posts.map((post) => (
+          <Post key={post.id || post.slug || post._id} post={post} />
+        ))}
         {/* You can map more <Post /> components here */}
       </div>
       <div className="side-content">

@@ -6,6 +6,40 @@ const STORAGE_USER_KEY = "authUser";
 
 const AuthContext = createContext(null);
 
+const AVATAR_FALLBACK_BASE = "https://api.dicebear.com/7.x/initials/svg?seed=";
+
+const deriveAvatar = (user = {}) => {
+  const candidate = [
+    user.avatar,
+    user.photo,
+    user.picture,
+    user.image,
+    user.photoURL,
+  ].find((value) => typeof value === "string" && value.trim().length > 0);
+
+  if (candidate) {
+    return candidate;
+  }
+
+  const seedSource = user.name || user.username || user.email || "Reader";
+  return `${AVATAR_FALLBACK_BASE}${encodeURIComponent(seedSource)}`;
+};
+
+const normalizeUser = (user) => {
+  if (!user || typeof user !== "object") {
+    return null;
+  }
+
+  const normalized = { ...user };
+  normalized.avatar = deriveAvatar(normalized);
+
+  if (!normalized.name && normalized.username) {
+    normalized.name = normalized.username;
+  }
+
+  return normalized;
+};
+
 const parseStoredUser = (rawUser) => {
   try {
     return JSON.parse(rawUser);
@@ -89,10 +123,16 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   const persistAuth = (nextToken, nextUser) => {
+    const normalizedUser = normalizeUser(nextUser);
+    if (!normalizedUser) {
+      return { error: "Unable to persist user information" };
+    }
+
     localStorage.setItem(STORAGE_TOKEN_KEY, nextToken);
-    localStorage.setItem(STORAGE_USER_KEY, JSON.stringify(nextUser));
+    localStorage.setItem(STORAGE_USER_KEY, JSON.stringify(normalizedUser));
     setToken(nextToken);
-    setUser(nextUser);
+    setUser(normalizedUser);
+    return { user: normalizedUser, token: nextToken };
   };
 
   const clearAuth = () => {
@@ -112,7 +152,10 @@ export const AuthProvider = ({ children }) => {
       } else {
         const storedUser = parseStoredUser(storedUserRaw);
         if (storedUser) {
-          setUser(storedUser);
+          const normalized = normalizeUser(storedUser);
+          if (normalized) {
+            setUser(normalized);
+          }
           setToken(storedToken);
         }
       }
@@ -145,8 +188,11 @@ export const AuthProvider = ({ children }) => {
         return { error: "Received an expired session token" };
       }
 
-      persistAuth(payload.token, payload.user);
-      return { user: payload.user, token: payload.token };
+      const result = persistAuth(payload.token, payload.user);
+      if (result?.error) {
+        return result;
+      }
+      return result;
     } catch (error) {
       return { error: error.message || "Unexpected error during login" };
     }
@@ -202,8 +248,7 @@ export const AuthProvider = ({ children }) => {
       return { error: "Unable to process user details from OAuth response" };
     }
 
-    persistAuth(nextToken, resolvedUser);
-    return { user: resolvedUser, token: nextToken };
+    return persistAuth(nextToken, resolvedUser);
   };
 
   const value = {
