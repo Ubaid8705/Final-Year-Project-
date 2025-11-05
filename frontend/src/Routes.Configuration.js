@@ -4,7 +4,7 @@ import { useAuth } from './contexts/AuthContext';
 import Login from './pages/login';
 import Settings from './pages/settings';
 import PostView from './pages/postview';
-import WriteBlog from './pages/writeblog';
+import Write from './pages/write';
 import LandingPage from './pages/landingpage';
 import Profile from './pages/profile';
 import OAuthCallback from './pages/oauth-callback';
@@ -63,7 +63,7 @@ export const routes = [
   },
   { path: '/write', element: (
       <ProtectedRoute>
-        <WriteBlog />
+        <Write />
       </ProtectedRoute>
     )
   },
