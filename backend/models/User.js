@@ -25,6 +25,13 @@ const userSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now },
   lastLogin: { type: Date },
 
+  savedPosts: [
+    {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "SavedPost",
+    },
+  ],
+
   linkedAccounts: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "LinkedAccount",
