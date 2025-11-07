@@ -3,6 +3,7 @@ import "./post.css";
 
 const FALLBACK_COVER_IMAGE =
   "https://images.unsplash.com/photo-1498050108023-c5249f4df085?auto=format&fit=crop&w=900&q=80";
+const PREMIUM_BADGE = "\u2726"; // &#10022;
 const buildFallbackAvatar = (seed) =>
   `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(seed || "Reader")}`;
 const formatPublishedDate = (value) => {
@@ -47,6 +48,7 @@ const Post = ({ post, variant = "default" }) => {
   const clapCount = safePost.clapCount ?? safePost.likes ?? 0;
   const responseCount = safePost.responseCount ?? safePost.comments ?? 0;
   const hasImage = Boolean(coverImage);
+  const isPremiumAuthor = Boolean(author.isPremium);
 
   const authorAvatar = useMemo(
     () => author.avatar || buildFallbackAvatar(displayAuthor),
@@ -59,7 +61,14 @@ const Post = ({ post, variant = "default" }) => {
         <header className="post-card__meta">
           <img src={authorAvatar} alt={displayAuthor} className="post-card__author" />
           <div className="post-card__byline">
-            <span className="post-card__author-name">{displayAuthor}</span>
+            <span className="post-card__author-name">
+              {isPremiumAuthor && (
+                <span className="post-card__premium-star" aria-hidden="true">
+                  {PREMIUM_BADGE}
+                </span>
+              )}
+              {displayAuthor}
+            </span>
             {displayTag && <span className="post-card__tag">in {displayTag}</span>}
           </div>
         </header>
@@ -67,7 +76,14 @@ const Post = ({ post, variant = "default" }) => {
         <p className="post-card__summary">{displaySummary}</p>
         <footer className="post-card__footer">
           <div className="post-card__stats">
-            <span className="post-card__stat post-card__stat--accent">{publishedLabel}</span>
+            <span className="post-card__stat post-card__stat--accent">
+              {isPremiumAuthor && (
+                <span className="post-card__premium-star" aria-hidden="true">
+                  {PREMIUM_BADGE}
+                </span>
+              )}
+              {publishedLabel}
+            </span>
             {readingTimeLabel && <span className="post-card__stat">{readingTimeLabel}</span>}
             <span className="post-card__stat">&#128079; {clapCount}</span>
             <span className="post-card__stat">&#128172; {responseCount}</span>

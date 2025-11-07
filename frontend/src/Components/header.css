@@ -150,6 +150,12 @@
   color: #222;
 }
 
+.profile-name__star {
+  margin-left: 6px;
+  color: #f59e0b;
+  font-size: 0.85rem;
+}
+
 .profile-view {
   font-size: 0.75rem;
   color: #757575;

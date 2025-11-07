@@ -8,6 +8,7 @@ import userRoutes from './routes/user.js';
 import postsRoutes from './routes/posts.js';
 import commentsRoutes from './routes/comments.js';
 import settingsRoutes from './routes/settings.js';
+import savedRoutes from './routes/saved.js';
 
 const app = express();
 
@@ -41,6 +42,7 @@ app.use('/api/users', userRoutes);
 app.use('/api/posts', postsRoutes);
 app.use('/api/comments', commentsRoutes);
 app.use('/api/settings', settingsRoutes);
+app.use('/api/saved-posts', savedRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {

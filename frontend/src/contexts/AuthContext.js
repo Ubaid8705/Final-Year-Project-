@@ -135,6 +135,22 @@ export const AuthProvider = ({ children }) => {
     return { user: normalizedUser, token: nextToken };
   };
 
+  const updateStoredUser = (patch = {}) => {
+    setUser((previous) => {
+      if (!previous) {
+        return previous;
+      }
+
+      const nextUser = normalizeUser({ ...previous, ...patch });
+      if (!nextUser) {
+        return previous;
+      }
+
+      localStorage.setItem(STORAGE_USER_KEY, JSON.stringify(nextUser));
+      return nextUser;
+    });
+  };
+
   const clearAuth = () => {
     localStorage.removeItem(STORAGE_TOKEN_KEY);
     localStorage.removeItem(STORAGE_USER_KEY);
@@ -260,6 +276,7 @@ export const AuthProvider = ({ children }) => {
     signup,
     logout,
     completeOAuthLogin,
+    updateUser: updateStoredUser,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

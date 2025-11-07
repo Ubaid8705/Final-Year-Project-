@@ -5,6 +5,7 @@ import "./header.css";
 
 const buildFallbackAvatar = (seed) =>
   `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(seed || "Reader")}`;
+const PREMIUM_BADGE = "\u2726"; // &#10022;
 
 function Header() {
   const [showMenu, setShowMenu] = useState(false);
@@ -15,6 +16,7 @@ function Header() {
   const isAuthenticated = Boolean(user);
   const displayName = user?.name || user?.username || "Reader";
   const displayEmail = user?.email || "";
+  const isPremium = Boolean(user?.membershipStatus);
   const fallbackAvatar = buildFallbackAvatar(displayName);
   const [avatarSrc, setAvatarSrc] = useState(user?.avatar || fallbackAvatar);
 
@@ -52,6 +54,18 @@ function Header() {
   const handleViewProfile = () => {
     setShowMenu(false);
     navigate(isAuthenticated ? "/profile" : "/login");
+  };
+
+  const handleSettings = () => {
+    setShowMenu(false);
+    navigate(isAuthenticated ? "/settings" : "/login");
+  };
+
+  const handleKeyActivate = (event, action) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      action();
+    }
   };
 
   const handleLogout = () => {
@@ -94,7 +108,14 @@ function Header() {
                 onError={handleAvatarError}
               />
               <div>
-                <div className="profile-name">{displayName}</div>
+                <div className="profile-name">
+                  {displayName}
+                  {isPremium && (
+                    <span className="profile-name__star" aria-hidden="true">
+                      {PREMIUM_BADGE}
+                    </span>
+                  )}
+                </div>
                 <div
                   className="profile-view clickable"
                   onClick={handleViewProfile}
@@ -115,7 +136,13 @@ function Header() {
               <div className="profile-link">
                 <span>&#128276;</span> Notifications
               </div>
-              <div className="profile-link">
+              <div
+                className="profile-link"
+                onClick={handleSettings}
+                onKeyDown={(event) => handleKeyActivate(event, handleSettings)}
+                role="button"
+                tabIndex={0}
+              >
                 <span>&#9881;</span> Settings
               </div>
               <div className="profile-link">
@@ -137,9 +164,9 @@ function Header() {
               {displayEmail && <div className="profile-email">{displayEmail}</div>}
             </div>
             <div className="profile-footer">
-              <span className="profile-footer-link">About</span>
+              <span className="profile-footer-link">Home</span>
               <span className="profile-footer-link">Blog</span>
-              <span className="profile-footer-link">Privacy</span>
+              <span className="profile-footer-link">About</span>
               <span className="profile-footer-link">Terms</span>
             </div>
           </div>

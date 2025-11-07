@@ -97,11 +97,41 @@ const PostSchema = new mongoose.Schema(
     isPublished: { type: Boolean, default: false },
     isLocked: { type: Boolean, default: false },
     allowResponses: { type: Boolean, default: true },
+    responseMode: {
+      type: String,
+      enum: ["EVERYONE", "FOLLOWERS", "DISABLED"],
+      default: "EVERYONE",
+    },
+    distributionMode: {
+      type: String,
+      enum: ["AUTO_EMAIL", "PROMPT"],
+      default: "AUTO_EMAIL",
+    },
     publishedAt: { type: Date },
     visibility: {
       type: String,
       enum: ["PUBLIC", "PRIVATE", "UNLISTED"],
       default: "PUBLIC",
+    },
+    inheritsDefaults: {
+      type: Boolean,
+      default: true,
+    },
+    settingsSnapshot: {
+      visibility: {
+        type: String,
+        enum: ["Public", "Unlisted", "Private"],
+        default: "Public",
+      },
+      commentSetting: {
+        type: String,
+        enum: ["Everyone", "Followers only", "Disabled"],
+        default: "Everyone",
+      },
+      sendEmails: {
+        type: Boolean,
+        default: true,
+      },
     },
   },
   { timestamps: true }

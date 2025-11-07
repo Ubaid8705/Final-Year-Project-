@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 import Post from "../models/Post.js";
 import Comment from "../models/Comments.js";
 import User from "../models/User.js";
+import UserSettings from "../models/Settings.js";
 import slugify from "../utils/slugify.js";
 import { countWords, estimateReadingTime } from "../utils/postMetrics.js";
 
@@ -28,9 +29,175 @@ const ensureUniqueSlug = async (baseTitle, excludeId = null) => {
   }
 };
 
-const hydratePost = (postDoc) => {
+const VALID_VISIBILITY_VALUES = ["PUBLIC", "UNLISTED", "PRIVATE"];
+const RESPONSE_MODE_VALUES = ["EVERYONE", "FOLLOWERS", "DISABLED"];
+
+const toVisibilityToken = (value) => {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const normalized = value.trim().toUpperCase();
+  if (VALID_VISIBILITY_VALUES.includes(normalized)) {
+    return normalized;
+  }
+
+  return null;
+};
+
+const toVisibilityLabel = (value) => {
+  const token = toVisibilityToken(value) || "PUBLIC";
+  switch (token) {
+    case "PRIVATE":
+      return "Private";
+    case "UNLISTED":
+      return "Unlisted";
+    default:
+      return "Public";
+  }
+};
+
+const mapCommentSettingToResponse = (value) => {
+  const normalized = (value || "").toString().trim().toLowerCase();
+  if (normalized === "followers only") {
+    return "FOLLOWERS";
+  }
+  if (normalized === "disabled") {
+    return "DISABLED";
+  }
+  return "EVERYONE";
+};
+
+const mapResponseModeToSetting = (mode) => {
+  switch ((mode || "").toString().toUpperCase()) {
+    case "FOLLOWERS":
+      return "Followers only";
+    case "DISABLED":
+      return "Disabled";
+    default:
+      return "Everyone";
+  }
+};
+
+const normalizeVisibility = (value, fallback = "PUBLIC") => {
+  return toVisibilityToken(value) || toVisibilityToken(fallback) || "PUBLIC";
+};
+
+const determineResponseMode = (body = {}, fallback = "EVERYONE") => {
+  const { responseMode, commentSetting, allowResponses } = body;
+
+  if (typeof responseMode === "string") {
+    const normalized = responseMode.trim().toUpperCase();
+    if (RESPONSE_MODE_VALUES.includes(normalized)) {
+      return normalized;
+    }
+  }
+
+  if (typeof commentSetting === "string") {
+    return mapCommentSettingToResponse(commentSetting);
+  }
+
+  if (typeof allowResponses === "boolean") {
+    return allowResponses ? "EVERYONE" : "DISABLED";
+  }
+
+  return RESPONSE_MODE_VALUES.includes((fallback || "").toUpperCase())
+    ? fallback
+    : "EVERYONE";
+};
+
+const normalizeDistributionMode = (body = {}, fallback = "AUTO_EMAIL") => {
+  const { distributionMode, sendEmails } = body;
+
+  if (typeof distributionMode === "string") {
+    const normalized = distributionMode.trim().toUpperCase().replace(/[\s-]+/g, "_");
+    if (normalized === "AUTO_EMAIL" || normalized === "PROMPT") {
+      return normalized;
+    }
+  }
+
+  if (typeof sendEmails === "boolean") {
+    return sendEmails ? "AUTO_EMAIL" : "PROMPT";
+  }
+
+  const normalizedFallback = (fallback || "AUTO_EMAIL").toString().trim().toUpperCase();
+  return normalizedFallback === "PROMPT" ? "PROMPT" : "AUTO_EMAIL";
+};
+
+const defaultSnapshotFromSettings = (settings) => {
+  if (!settings) {
+    return {
+      visibility: "Public",
+      commentSetting: "Everyone",
+      sendEmails: true,
+    };
+  }
+
+  return {
+    visibility: settings.visibility || "Public",
+    commentSetting: settings.commentSetting || "Everyone",
+    sendEmails: typeof settings.sendEmails === "boolean" ? settings.sendEmails : true,
+  };
+};
+
+const OVERRIDE_KEYS = [
+  "visibility",
+  "responseMode",
+  "commentSetting",
+  "allowResponses",
+  "distributionMode",
+  "sendEmails",
+];
+
+const hasSettingOverrides = (body = {}) =>
+  OVERRIDE_KEYS.some((key) => Object.prototype.hasOwnProperty.call(body, key));
+
+const mapDistributionToSendEmails = (distributionMode) =>
+  (distributionMode || "AUTO_EMAIL").toUpperCase() === "AUTO_EMAIL";
+
+export const hydratePost = (postDoc) => {
   if (!postDoc) return null;
   const post = postDoc.toObject ? postDoc.toObject({ virtuals: true }) : postDoc;
+
+  const responseMode = RESPONSE_MODE_VALUES.includes((post.responseMode || "").toUpperCase())
+    ? post.responseMode.toUpperCase()
+    : post.allowResponses === false
+    ? "DISABLED"
+    : "EVERYONE";
+
+  const distributionMode = (post.distributionMode || "")
+    .toString()
+    .toUpperCase()
+    .replace(/[\s-]+/g, "_");
+
+  const normalizedDistribution =
+    distributionMode === "PROMPT" || distributionMode === "AUTO_EMAIL"
+      ? distributionMode
+      : mapDistributionToSendEmails(post.settingsSnapshot?.sendEmails)
+      ? "AUTO_EMAIL"
+      : "PROMPT";
+
+  const snapshot = {
+    visibility: post.settingsSnapshot?.visibility || toVisibilityLabel(post.visibility),
+    commentSetting: post.settingsSnapshot?.commentSetting || mapResponseModeToSetting(responseMode),
+    sendEmails:
+      typeof post.settingsSnapshot?.sendEmails === "boolean"
+        ? post.settingsSnapshot.sendEmails
+        : mapDistributionToSendEmails(normalizedDistribution),
+  };
+
+  const normalizedVisibility = normalizeVisibility(post.visibility, snapshot.visibility);
+  const allowResponses = responseMode !== "DISABLED";
+  const defaultResponseMode = mapCommentSettingToResponse(snapshot.commentSetting);
+  const defaultDistributionMode = snapshot.sendEmails ? "AUTO_EMAIL" : "PROMPT";
+  const defaultVisibilityToken = normalizeVisibility(snapshot.visibility);
+
+  const inheritsDefaults =
+    typeof post.inheritsDefaults === "boolean"
+      ? post.inheritsDefaults
+      : normalizedVisibility === defaultVisibilityToken &&
+        responseMode === defaultResponseMode &&
+        normalizedDistribution === defaultDistributionMode;
 
   return {
     id: post._id,
@@ -43,10 +210,16 @@ const hydratePost = (postDoc) => {
     wordCount: post.wordCount,
     clapCount: post.clapCount,
     responseCount: post.responseCount,
-    allowResponses: post.allowResponses,
+    allowResponses,
+    responseMode,
+    distributionMode: normalizedDistribution,
+    inheritsDefaults,
+    settingsSnapshot: snapshot,
+    visibility: normalizedVisibility,
+    visibilityLabel: toVisibilityLabel(normalizedVisibility),
+    commentAccess: mapResponseModeToSetting(responseMode),
     isPublished: post.isPublished,
     isLocked: post.isLocked,
-    visibility: post.visibility,
     publishedAt: post.publishedAt,
     createdAt: post.createdAt,
     updatedAt: post.updatedAt,
@@ -57,6 +230,7 @@ const hydratePost = (postDoc) => {
       name: post.author.name,
       avatar: post.author.avatar,
       bio: post.author.bio,
+      isPremium: Boolean(post.author.membershipStatus),
     },
   };
 };
@@ -105,7 +279,7 @@ export const listPosts = async (req, res) => {
         .sort(sortOption)
         .skip(skip)
         .limit(numericLimit)
-        .populate("author", "username name avatar bio")
+  .populate("author", "username name avatar bio membershipStatus")
         .lean(),
       Post.countDocuments(filter),
     ]);
@@ -126,13 +300,13 @@ export const listPosts = async (req, res) => {
 const findPostByParam = async (param) => {
   if (isObjectId(param)) {
     const post = await Post.findById(param)
-      .populate("author", "username name avatar bio pronouns")
+  .populate("author", "username name avatar bio pronouns membershipStatus")
       .lean();
     if (post) return post;
   }
 
   return Post.findOne({ slug: param })
-    .populate("author", "username name avatar bio pronouns")
+  .populate("author", "username name avatar bio pronouns membershipStatus")
     .lean();
 };
 
@@ -159,14 +333,24 @@ export const createPost = async (req, res) => {
       content = [],
       tags = [],
       coverImage,
-      allowResponses = true,
       isPublished = false,
-      visibility = "PUBLIC",
     } = req.body;
 
     if (!title) {
       return res.status(400).json({ error: "Title is required" });
     }
+
+    const userSettings = await UserSettings.findOne({ user: req.user._id }).lean();
+    const settingsSnapshot = defaultSnapshotFromSettings(userSettings);
+    const defaultResponseMode = mapCommentSettingToResponse(settingsSnapshot.commentSetting);
+    const resolvedVisibility = normalizeVisibility(req.body.visibility, settingsSnapshot.visibility);
+    const resolvedResponseMode = determineResponseMode(req.body, defaultResponseMode);
+    const resolvedDistributionMode = normalizeDistributionMode(
+      req.body,
+      settingsSnapshot.sendEmails ? "AUTO_EMAIL" : "PROMPT"
+    );
+    const inheritsDefaults = !hasSettingOverrides(req.body);
+    const allowResponsesResolved = resolvedResponseMode !== "DISABLED";
 
     const wordCount = countWords(content);
     const readingTime = estimateReadingTime(wordCount);
@@ -179,16 +363,20 @@ export const createPost = async (req, res) => {
       content,
       tags,
       coverImage,
-      allowResponses,
+      allowResponses: allowResponsesResolved,
+      responseMode: resolvedResponseMode,
+      distributionMode: resolvedDistributionMode,
+      inheritsDefaults,
+      settingsSnapshot,
       isPublished,
-      visibility,
+      visibility: resolvedVisibility,
       slug,
       wordCount,
       readingTime,
       publishedAt: isPublished ? new Date() : null,
     });
 
-    await post.populate("author", "username name avatar bio");
+    await post.populate("author", "username name avatar bio membershipStatus");
 
     res.status(201).json(hydratePost(post));
   } catch (error) {
@@ -209,19 +397,11 @@ export const updatePost = async (req, res) => {
       return res.status(403).json({ error: "Not authorized to edit this post" });
     }
 
+    const body = req.body || {};
     const updates = {};
-    const allowed = [
-      "title",
-      "subtitle",
-      "content",
-      "tags",
-      "coverImage",
-      "allowResponses",
-      "isPublished",
-      "visibility",
-    ];
+    const allowed = ["title", "subtitle", "content", "tags", "coverImage", "isPublished"];
 
-    Object.entries(req.body || {}).forEach(([key, value]) => {
+    Object.entries(body).forEach(([key, value]) => {
       if (allowed.includes(key)) {
         updates[key] = value;
       }
@@ -243,10 +423,68 @@ export const updatePost = async (req, res) => {
         : null;
     }
 
+    let resolvedVisibility;
+    if (Object.prototype.hasOwnProperty.call(body, "visibility")) {
+      const fallbackVisibility = post.settingsSnapshot?.visibility || post.visibility;
+      resolvedVisibility = normalizeVisibility(body.visibility, fallbackVisibility);
+      updates.visibility = resolvedVisibility;
+    }
+
+    let resolvedResponseMode;
+    if (
+      ["responseMode", "commentSetting", "allowResponses"].some((key) =>
+        Object.prototype.hasOwnProperty.call(body, key)
+      )
+    ) {
+      const fallbackMode =
+        post.responseMode || mapCommentSettingToResponse(post.settingsSnapshot?.commentSetting);
+      resolvedResponseMode = determineResponseMode(body, fallbackMode);
+      updates.responseMode = resolvedResponseMode;
+      updates.allowResponses = resolvedResponseMode !== "DISABLED";
+    }
+
+    let resolvedDistributionMode;
+    if (
+      ["distributionMode", "sendEmails"].some((key) =>
+        Object.prototype.hasOwnProperty.call(body, key)
+      )
+    ) {
+      const fallbackDistribution =
+        post.distributionMode || (post.settingsSnapshot?.sendEmails ? "AUTO_EMAIL" : "PROMPT");
+      resolvedDistributionMode = normalizeDistributionMode(body, fallbackDistribution);
+      updates.distributionMode = resolvedDistributionMode;
+    }
+
+    const touchedSetting =
+      typeof resolvedVisibility !== "undefined" ||
+      typeof resolvedResponseMode !== "undefined" ||
+      typeof resolvedDistributionMode !== "undefined";
+
+    if (touchedSetting) {
+      const defaultVisibilityToken = normalizeVisibility(
+        post.settingsSnapshot?.visibility,
+        post.settingsSnapshot?.visibility
+      );
+      const defaultResponseMode = mapCommentSettingToResponse(
+        post.settingsSnapshot?.commentSetting
+      );
+      const defaultDistributionMode = post.settingsSnapshot?.sendEmails ? "AUTO_EMAIL" : "PROMPT";
+
+      const finalVisibility = updates.visibility || post.visibility;
+      const finalResponse = updates.responseMode || post.responseMode || defaultResponseMode;
+      const finalDistribution =
+        updates.distributionMode || post.distributionMode || defaultDistributionMode;
+
+      updates.inheritsDefaults =
+        finalVisibility === defaultVisibilityToken &&
+        finalResponse === defaultResponseMode &&
+        finalDistribution === defaultDistributionMode;
+    }
+
     const updated = await Post.findByIdAndUpdate(post._id, updates, {
       new: true,
       runValidators: true,
-    }).populate("author", "username name avatar bio");
+    }).populate("author", "username name avatar bio membershipStatus");
 
     res.json(hydratePost(updated));
   } catch (error) {
@@ -310,7 +548,7 @@ export const listAuthorPosts = async (req, res) => {
 
     const posts = await Post.find({ author: user._id, isPublished: true })
       .sort({ publishedAt: -1 })
-      .populate("author", "username name avatar bio")
+  .populate("author", "username name avatar bio membershipStatus")
       .lean();
 
     res.json({
@@ -320,6 +558,7 @@ export const listAuthorPosts = async (req, res) => {
         name: user.name,
         avatar: user.avatar,
         bio: user.bio,
+        isPremium: Boolean(user.membershipStatus),
       },
       posts: posts.map(hydratePost),
     });
@@ -336,7 +575,7 @@ export const listDrafts = async (req, res) => {
 
     const drafts = await Post.find({ author: req.user._id, isPublished: false })
       .sort({ updatedAt: -1 })
-      .populate("author", "username name avatar bio")
+  .populate("author", "username name avatar bio membershipStatus")
       .lean();
 
     res.json({ items: drafts.map(hydratePost) });
