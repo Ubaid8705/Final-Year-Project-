@@ -5,6 +5,7 @@ import User from "../models/User.js";
 import UserSettings from "../models/Settings.js";
 import slugify from "../utils/slugify.js";
 import { countWords, estimateReadingTime } from "../utils/postMetrics.js";
+import { safeCreateNotification } from "../services/notificationService.js";
 
 const isObjectId = (value = "") => mongoose.Types.ObjectId.isValid(value);
 
@@ -530,6 +531,22 @@ export const clapPost = async (req, res) => {
       { $inc: { clapCount: 1 } },
       { new: true }
     );
+
+    if (req.user && post.author?._id?.toString() !== req.user._id.toString()) {
+      const actorName = req.user.name || req.user.username || "Someone";
+
+      await safeCreateNotification({
+        recipient: post.author._id,
+        sender: req.user._id,
+        type: "like",
+        post: post._id,
+        message: `${actorName} clapped for your story "${post.title}"`,
+        metadata: {
+          postId: post._id.toString(),
+          postSlug: post.slug,
+        },
+      });
+    }
 
     res.json({ clapCount: updated.clapCount });
   } catch (error) {

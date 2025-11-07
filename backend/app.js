@@ -9,11 +9,16 @@ import postsRoutes from './routes/posts.js';
 import commentsRoutes from './routes/comments.js';
 import settingsRoutes from './routes/settings.js';
 import savedRoutes from './routes/saved.js';
+import notificationsRoutes from './routes/notifications.js';
 
 const app = express();
 
+const allowedOrigins = (process.env.CLIENT_URL || 'http://localhost:3000')
+  .split(',')
+  .map((origin) => origin.trim());
+
 // Middleware
-app.use(cors());
+app.use(cors({ origin: allowedOrigins, credentials: true }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use('/uploads', express.static('uploads'));
@@ -43,6 +48,7 @@ app.use('/api/posts', postsRoutes);
 app.use('/api/comments', commentsRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/saved-posts', savedRoutes);
+app.use('/api/notifications', notificationsRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {

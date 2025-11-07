@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import "./header.css";
+import { useSocketContext } from "../contexts/SocketContext";
 
 const buildFallbackAvatar = (seed) =>
   `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(seed || "Reader")}`;
@@ -12,6 +13,7 @@ function Header() {
   const menuRef = useRef();
   const navigate = useNavigate();
   const { user, logout } = useAuth();
+  const { unreadCount = 0 } = useSocketContext() || {};
 
   const isAuthenticated = Boolean(user);
   const displayName = user?.name || user?.username || "Reader";
@@ -74,6 +76,15 @@ function Header() {
     navigate("/login");
   };
 
+  const handleNotifications = () => {
+    if (!isAuthenticated) {
+      navigate("/login");
+      return;
+    }
+    setShowMenu(false);
+    navigate("/notifications");
+  };
+
   return (
     <div className="header">
       <div className="logo">BlogsHive</div>
@@ -85,7 +96,23 @@ function Header() {
         <button className="write-btn" onClick={handleWrite}>
           <span className="write-icon">&#9998;</span> Write
         </button>
-        {isAuthenticated && <span className="bell-icon">&#128276;</span>}
+        {isAuthenticated && (
+          <button
+            type="button"
+            className="bell-btn"
+            onClick={handleNotifications}
+            aria-label={unreadCount > 0 ? `${unreadCount} unread notifications` : "Notifications"}
+          >
+            <span className="bell-icon" aria-hidden="true">
+              &#128276;
+            </span>
+            {unreadCount > 0 && (
+              <span className="bell-badge" aria-hidden="true">
+                {unreadCount > 9 ? "9+" : unreadCount}
+              </span>
+            )}
+          </button>
+        )}
         {isAuthenticated ? (
           <img
             className="avatar"
@@ -133,8 +160,15 @@ function Header() {
               <div className="profile-link" onClick={handleWrite}>
                 <span>&#9998;</span> Write
               </div>
-              <div className="profile-link">
+              <div
+                className="profile-link"
+                onClick={handleNotifications}
+                onKeyDown={(event) => handleKeyActivate(event, handleNotifications)}
+                role="button"
+                tabIndex={0}
+              >
                 <span>&#128276;</span> Notifications
+                {unreadCount > 0 && <span className="profile-link__badge">{unreadCount > 9 ? "9+" : unreadCount}</span>}
               </div>
               <div
                 className="profile-link"

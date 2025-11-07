@@ -8,6 +8,7 @@ import Write from './pages/write';
 import LandingPage from './pages/landingpage';
 import Profile from './pages/profile';
 import OAuthCallback from './pages/oauth-callback';
+import Notifications from './pages/notifications';
 
 // Protected Route wrapper component (uses auth context)
 export function ProtectedRoute({ children }) {
@@ -58,6 +59,12 @@ export const routes = [
   { path: '/profile', element: (
       <ProtectedRoute>
         <Profile />
+      </ProtectedRoute>
+    )
+  },
+  { path: '/notifications', element: (
+      <ProtectedRoute>
+        <Notifications />
       </ProtectedRoute>
     )
   },

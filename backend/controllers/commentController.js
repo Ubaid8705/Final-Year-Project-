@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
 import Comment from "../models/Comments.js";
 import Post from "../models/Post.js";
+import { safeCreateNotification } from "../services/notificationService.js";
 
 const toObjectId = (value) => {
   if (mongoose.Types.ObjectId.isValid(value)) {
@@ -88,6 +89,12 @@ export const createComment = async (req, res) => {
 
     const parentId = parentCommentId ? toObjectId(parentCommentId) : null;
 
+    const post = await Post.findById(postObjectId).select("author title slug").lean();
+
+    if (!post) {
+      return res.status(404).json({ error: "Post not found" });
+    }
+
     const comment = await Comment.create({
       postId: postObjectId,
       userId: req.user._id,
@@ -97,6 +104,44 @@ export const createComment = async (req, res) => {
 
     await refreshResponseCount(postObjectId);
     await comment.populate("userId", "username name avatar");
+
+    const actorName = req.user.name || req.user.username || "Someone";
+    const metadata = {
+      postId: post._id.toString(),
+      postSlug: post.slug,
+      commentId: comment._id.toString(),
+      excerpt: comment.content.slice(0, 160),
+    };
+
+    if (post.author && post.author.toString() !== req.user._id.toString()) {
+      await safeCreateNotification({
+        recipient: post.author,
+        sender: req.user._id,
+        type: "comment",
+        post: post._id,
+        message: `${actorName} commented on "${post.title}"`,
+        metadata,
+      });
+    }
+
+    if (parentId) {
+      const parent = await Comment.findById(parentId).select("userId").lean();
+
+      if (
+        parent?.userId &&
+        parent.userId.toString() !== req.user._id.toString() &&
+        parent.userId.toString() !== post.author?.toString()
+      ) {
+        await safeCreateNotification({
+          recipient: parent.userId,
+          sender: req.user._id,
+          type: "reply",
+          post: post._id,
+          message: `${actorName} replied to your comment on "${post.title}"`,
+          metadata: { ...metadata, parentCommentId: parentId.toString() },
+        });
+      }
+    }
 
     res.status(201).json(buildCommentResponse(comment));
   } catch (error) {
