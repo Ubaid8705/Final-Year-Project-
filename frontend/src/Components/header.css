@@ -20,6 +20,12 @@
   font-weight: bold;
   color: #242424;
   margin-right: 24px;
+  cursor: pointer;
+}
+
+.logo:focus-visible {
+  outline: 2px solid #1a8917;
+  outline-offset: 4px;
 }
 
 .search-bar {

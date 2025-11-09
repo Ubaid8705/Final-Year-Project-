@@ -1,19 +1,40 @@
-import express from 'express';
-import { getCurrentUser, updateUser, deleteUser, getUserByUsername } from '../controllers/userController.js';
+import express from "express";
+import {
+  getCurrentUser,
+  updateUser,
+  deleteUser,
+  getUserByUsername,
+} from "../controllers/userController.js";
+import {
+  followUser,
+  unfollowUser,
+  blockUser,
+  unblockUser,
+  listFollowers,
+  listFollowing,
+  getFollowStats,
+  getMyFollowStats,
+  getRelationshipStatus,
+} from "../controllers/relationshipController.js";
+import { authenticate, optionalAuthenticate } from "../middleware/authMiddleware.js";
+
 const router = express.Router();
 
-// Middleware to check if user is authenticated
-export const isAuthenticated = (req, res, next) => {
-  if (req.isAuthenticated()) {
-    return next();
-  }
-  res.status(401).json({ error: 'You must be logged in.' });
-};
+router.get("/me", authenticate, getCurrentUser);
+router.get("/me/follow-stats", authenticate, getMyFollowStats);
+router.put("/update", authenticate, updateUser);
+router.delete("/delete", authenticate, deleteUser);
 
-// User routes
-router.get('/me', isAuthenticated, getCurrentUser);
-router.put('/update', isAuthenticated, updateUser);
-router.delete('/delete', isAuthenticated, deleteUser);
-router.get('/:username', getUserByUsername);
+router.post("/:username/follow", authenticate, followUser);
+router.delete("/:username/follow", authenticate, unfollowUser);
+router.post("/:username/block", authenticate, blockUser);
+router.delete("/:username/block", authenticate, unblockUser);
+router.get("/:username/relationship", authenticate, getRelationshipStatus);
+
+router.get("/:username/followers", optionalAuthenticate, listFollowers);
+router.get("/:username/following", optionalAuthenticate, listFollowing);
+router.get("/:username/follow-stats", optionalAuthenticate, getFollowStats);
+
+router.get("/:username", optionalAuthenticate, getUserByUsername);
 
 export default router;

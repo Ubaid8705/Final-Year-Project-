@@ -53,6 +53,12 @@ function Header() {
     navigate(isAuthenticated ? "/write" : "/login");
   };
 
+  const handleHome = () => {
+    setShowMenu(false);
+    navigate("/", { state: { view: "posts" } });
+    window.dispatchEvent(new CustomEvent("landing:showPosts"));
+  };
+
   const handleViewProfile = () => {
     setShowMenu(false);
     navigate(isAuthenticated ? "/profile" : "/login");
@@ -82,12 +88,21 @@ function Header() {
       return;
     }
     setShowMenu(false);
-    navigate("/notifications");
+    navigate("/", { state: { view: "notifications" } });
+    window.dispatchEvent(new CustomEvent("landing:showNotifications"));
   };
 
   return (
     <div className="header">
-      <div className="logo">BlogsHive</div>
+      <div
+        className="logo"
+        role="button"
+        tabIndex={0}
+        onClick={handleHome}
+        onKeyDown={(event) => handleKeyActivate(event, handleHome)}
+      >
+        BlogsHive
+      </div>
       <div className="search-bar">
         <span className="search-icon">&#128269;</span>
         <input type="search" placeholder="Search" />

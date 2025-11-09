@@ -2,6 +2,12 @@ import passport from 'passport';
 import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
 import { Strategy as FacebookStrategy } from 'passport-facebook';
 import User from '../models/User.js';
+import {
+  buildDisplayName,
+  generateUniqueUsername,
+  normalizeEmail,
+} from '../utils/userUtils.js';
+import { initializeSeedData } from '../utils/seed.js';
 
 export default function (passportInstance) {
   // serialize/deserialize (we won't use session except for handshake)
@@ -27,7 +33,10 @@ export default function (passportInstance) {
         },
         async (req, accessToken, refreshToken, profile, done) => {
           try {
-            const email = profile.emails?.[0]?.value;
+            let email = normalizeEmail(profile.emails?.[0]?.value);
+            if (!email) {
+              email = normalizeEmail(`${profile.id}@google.local`);
+            }
             let user =
               (await User.findOne({
                 provider: "google",
@@ -36,33 +45,31 @@ export default function (passportInstance) {
               (email && (await User.findOne({ email })));
 
             if (!user) {
-              // Create a unique username if displayName already exists
-              let username = profile.displayName
-                ? profile.displayName.toLowerCase().replace(/\s+/g, '')
-                : `reader${Math.floor(Math.random() * 10000)}`;
-              const usernameExists = await User.findOne({ username });
-              if (usernameExists) {
-                username = `${username}${Math.floor(Math.random() * 10000)}`;
-              }
+              const displayName = buildDisplayName(email, profile.displayName);
+              const username = await generateUniqueUsername(email, displayName);
 
               user = await User.create({
                 provider: "google",
                 providerId: profile.id,
                 email,
                 username,
-                name: profile.displayName,
+                name: displayName,
                 avatar: profile.photos?.[0]?.value,
                 isEmailVerified: true,
                 hasSubdomain: false,
                 customDomainState: 'none',
                 membershipStatus: false,
+                pronouns: [],
                 lastLogin: new Date(),
               });
+
+              initializeSeedData().catch(() => {});
             } else if (!user.providerId) {
               // link existing local user by email
               user.provider = "google";
               user.providerId = profile.id;
               user.avatar = user.avatar || profile.photos?.[0]?.value;
+              user.name = user.name || buildDisplayName(email, profile.displayName);
               if (!user.isEmailVerified) {
                 user.isEmailVerified = true;
               }
@@ -104,7 +111,7 @@ export default function (passportInstance) {
           try {
             const rawEmail = profile.emails?.[0]?.value;
             const fallbackEmail = rawEmail || `${profile.id}@facebook.local`;
-            const email = fallbackEmail.toLowerCase();
+            const email = normalizeEmail(fallbackEmail);
 
             let user =
               (await User.findOne({
@@ -113,38 +120,34 @@ export default function (passportInstance) {
               })) || (await User.findOne({ email }));
 
             if (!user) {
-              let usernameSource = profile.displayName
-                ? profile.displayName
-                : `reader${Math.floor(Math.random() * 10000)}`;
-              let username = usernameSource.toLowerCase().replace(/\s+/g, "");
-              if (!username) {
-                username = `reader${Math.floor(Math.random() * 10000)}`;
-              }
-
-              const usernameExists = await User.findOne({ username });
-              if (usernameExists) {
-                username = `${username}${Math.floor(Math.random() * 10000)}`;
-              }
+              const displayName = buildDisplayName(email, profile.displayName);
+              const username = await generateUniqueUsername(email, displayName);
 
               user = await User.create({
                 provider: "facebook",
                 providerId: profile.id,
                 email,
                 username,
-                name: profile.displayName,
+                name: displayName,
                 avatar: profile.photos?.[0]?.value,
                 isEmailVerified: true,
                 hasSubdomain: false,
                 customDomainState: 'none',
                 membershipStatus: false,
+                pronouns: [],
                 lastLogin: new Date(),
               });
+
+              initializeSeedData().catch(() => {});
             } else if (!user.providerId) {
               user.provider = "facebook";
               user.providerId = profile.id;
               user.avatar = user.avatar || profile.photos?.[0]?.value;
               if (!user.email) {
                 user.email = email;
+              }
+              if (!user.name) {
+                user.name = buildDisplayName(email, profile.displayName);
               }
               if (!user.isEmailVerified) {
                 user.isEmailVerified = true;

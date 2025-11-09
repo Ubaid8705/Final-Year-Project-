@@ -8,4 +8,7 @@ const newsletterSchema = new mongoose.Schema({
 },
 { timestamps: true });
 
-export default mongoose.model("Newsletter", newsletterSchema);
+const NewsletterModel =
+  mongoose.models.Newsletter || mongoose.model("Newsletter", newsletterSchema);
+
+export default NewsletterModel;

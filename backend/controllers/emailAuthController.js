@@ -1,23 +1,41 @@
 import crypto from 'crypto';
+import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
 import { sendVerificationEmail, sendPasswordResetEmail } from '../services/emailService.js';
-import jwt from 'jsonwebtoken';
+import {
+  buildDisplayName,
+  generateUniqueUsername,
+  normalizeEmail,
+} from '../utils/userUtils.js';
+import { initializeSeedData } from '../utils/seed.js';
 
 // Register new user
 export const register = async (req, res) => {
   try {
-    const { email, password, username, name } = req.body;
+    const { email, password, name } = req.body;
+
+    const normalizedEmail = normalizeEmail(email);
+    if (!normalizedEmail) {
+      return res.status(400).json({ error: 'A valid email address is required' });
+    }
+
+    if (!password || typeof password !== 'string' || password.length < 6) {
+      return res.status(400).json({ error: 'A valid password is required' });
+    }
 
     // Check if user already exists
     const existingUser = await User.findOne({
-      $or: [{ email }, { username }]
+      email: normalizedEmail,
     });
 
     if (existingUser) {
       return res.status(400).json({
-        error: existingUser.email === email ? 'Email already registered' : 'Username already taken'
+        error: 'Email already registered'
       });
     }
+
+    const resolvedName = buildDisplayName(normalizedEmail, name);
+    const username = await generateUniqueUsername(normalizedEmail, resolvedName);
 
     // Create a short numeric OTP and expiry (10 minutes)
     const otp = String(Math.floor(100000 + Math.random() * 900000));
@@ -25,17 +43,26 @@ export const register = async (req, res) => {
 
     // Create new user
     const user = await User.create({
-      email,
+      provider: 'local',
+      providerId: null,
+      email: normalizedEmail,
       password,
       username,
-      name,
+      name: resolvedName,
       emailVerificationOTP: otp,
       emailVerificationOTPExpires,
       isEmailVerified: false,
+      hasSubdomain: false,
+      customDomainState: 'none',
+      membershipStatus: false,
+      pronouns: [],
+      lastLogin: null,
     });
 
     // Send OTP to user's email
-    await sendVerificationEmail(email, otp);
+  await sendVerificationEmail(user.email, otp);
+
+  initializeSeedData().catch(() => {});
 
     res.status(201).json({
       message: 'Registration successful. An OTP was sent to your email to verify your account.'
@@ -50,12 +77,14 @@ export const verifyEmail = async (req, res) => {
   try {
     const { email, otp } = req.body;
 
-    if (!email || !otp) {
+    const normalizedEmail = normalizeEmail(email);
+
+    if (!normalizedEmail || !otp) {
       return res.status(400).json({ error: 'Email and otp are required' });
     }
 
     const user = await User.findOne({
-      email,
+      email: normalizedEmail,
       emailVerificationOTP: otp,
       emailVerificationOTPExpires: { $gt: Date.now() },
     });
@@ -69,7 +98,9 @@ export const verifyEmail = async (req, res) => {
     user.emailVerificationOTPExpires = undefined;
     await user.save();
 
-    res.json({ message: 'Email verified successfully' });
+  initializeSeedData().catch(() => {});
+
+  res.json({ message: 'Email verified successfully' });
   } catch (error) {
     res.status(500).json({ error: 'Error verifying email' });
   }
@@ -80,8 +111,13 @@ export const login = async (req, res) => {
   try {
     const { email, password } = req.body;
 
+    const normalizedEmail = normalizeEmail(email);
+    if (!normalizedEmail) {
+      return res.status(400).json({ error: 'A valid email address is required' });
+    }
+
     // Find user by email
-    const user = await User.findOne({ email });
+    const user = await User.findOne({ email: normalizedEmail });
     if (!user) {
       return res.status(401).json({ error: 'Invalid email or password' });
     }
@@ -127,7 +163,8 @@ export const login = async (req, res) => {
 export const forgotPassword = async (req, res) => {
   try {
     const { email } = req.body;
-    const user = await User.findOne({ email });
+    const normalizedEmail = normalizeEmail(email);
+    const user = normalizedEmail ? await User.findOne({ email: normalizedEmail }) : null;
 
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
@@ -138,7 +175,7 @@ export const forgotPassword = async (req, res) => {
     user.resetPasswordExpires = Date.now() + 3600000; // 1 hour
     await user.save();
 
-    await sendPasswordResetEmail(email, resetToken);
+  await sendPasswordResetEmail(user.email, resetToken);
 
     res.json({ message: 'Password reset email sent' });
   } catch (error) {

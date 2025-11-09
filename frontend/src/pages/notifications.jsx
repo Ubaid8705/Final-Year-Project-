@@ -1,204 +1,281 @@
 import React, { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { useSocketContext } from "../contexts/SocketContext";
 import "./notifications.css";
+import { useSocketContext } from "../contexts/SocketContext";
+import { useAuth } from "../contexts/AuthContext";
 
-const formatDate = (value) => {
+const TABS = [
+  { id: "all", label: "All" },
+  { id: "unread", label: "Unread" },
+];
+
+const formatRelativeTime = (value) => {
   if (!value) {
     return "";
   }
-  try {
-    return new Intl.DateTimeFormat("en-US", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    }).format(new Date(value));
-  } catch (error) {
-    return value;
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  const diffInSeconds = Math.max(0, Math.floor((Date.now() - date.getTime()) / 1000));
+  if (diffInSeconds < 60) {
+    return `${diffInSeconds}s ago`;
+  }
+
+  const diffInMinutes = Math.floor(diffInSeconds / 60);
+  if (diffInMinutes < 60) {
+    return `${diffInMinutes}m ago`;
+  }
+
+  const diffInHours = Math.floor(diffInMinutes / 60);
+  if (diffInHours < 24) {
+    return `${diffInHours}h ago`;
+  }
+
+  const diffInDays = Math.floor(diffInHours / 24);
+  if (diffInDays < 7) {
+    return `${diffInDays}d ago`;
+  }
+
+  return date.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+};
+
+const buildMessage = (notification) => {
+  if (!notification) {
+    return "";
+  }
+
+  if (notification.message) {
+    return notification.message;
+  }
+
+  const actor = notification.sender?.name || notification.sender?.username || "Someone";
+  const title = notification.post?.title ? ` "${notification.post.title}"` : "";
+
+  switch (notification.type) {
+    case "like":
+      return `${actor} liked your story${title}`;
+    case "comment":
+      return `${actor} commented on${title || " your story"}`;
+    case "reply":
+      return `${actor} replied to your comment${title ? ` on${title}` : ""}`;
+    case "follow":
+      return `${actor} started following you`;
+    case "system":
+    default:
+      return `${actor} sent you an update`;
   }
 };
 
-const NotificationRow = ({ notification, onOpen }) => {
-  const actor = notification.sender;
-  const actorLabel = actor?.name || actor?.username || "Someone";
-  const avatar =
-    actor?.avatar ||
-    `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(actorLabel || "BlogsHive")}`;
-  const displayMessage = notification.message
-    || (notification.type === "follow"
-      ? `${actorLabel} followed you`
-      : notification.type === "like"
-      ? `${actorLabel} appreciated your story`
-      : notification.type === "comment" || notification.type === "reply"
-      ? `${actorLabel} responded to your story`
-      : "You have a new notification");
+const getInitials = (sender) => {
+  if (!sender) {
+    return "•";
+  }
 
-  const handleClick = () => {
-    onOpen(notification);
+  const source = sender.name || sender.username || "";
+  if (!source) {
+    return "•";
+  }
+
+  return source
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((segment) => segment[0])
+    .join("")
+    .toUpperCase();
+};
+
+const NotificationItem = ({ notification, onSelect }) => {
+  const message = buildMessage(notification);
+  const timestamp = formatRelativeTime(notification.createdAt);
+  const isUnread = !notification.isRead;
+
+  const handleKeyDown = (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      onSelect(notification);
+    }
   };
 
   return (
-    <button
-      type="button"
-      className={`notifications-item${notification.isRead ? "" : " notifications-item--unread"}`}
-      onClick={handleClick}
+    <div
+      className={`notifications-item${isUnread ? " notifications-item--unread" : ""}`}
+      onClick={() => onSelect(notification)}
+      onKeyDown={handleKeyDown}
+      role="button"
+      tabIndex={0}
     >
-      <span className="notifications-item__avatar" aria-hidden="true">
-        <img src={avatar} alt="" />
-      </span>
-      <span className="notifications-item__body">
-  <span className="notifications-item__message">{displayMessage}</span>
-        <span className="notifications-item__meta">{formatDate(notification.createdAt)}</span>
-      </span>
-    </button>
+      <div className="notifications-item__avatar">
+        {notification.sender?.avatar ? (
+          <img src={notification.sender.avatar} alt={notification.sender.name || ""} />
+        ) : (
+          <span>{getInitials(notification.sender)}</span>
+        )}
+      </div>
+      <div className="notifications-item__body">
+        <p className="notifications-item__message">{message}</p>
+        <div className="notifications-item__meta">
+          <span>{timestamp}</span>
+          {notification.post?.title ? (
+            <>
+              <span aria-hidden="true">•</span>
+              <span>{notification.post.title}</span>
+            </>
+          ) : null}
+        </div>
+      </div>
+    </div>
   );
 };
 
-const STAFF_PICKS = [
-  {
-    author: "Malaynda Stewart, PhD, BCPA",
-    title: "Repair Over Perfection: What I Learned When I Said the Wrong Thing",
-    timeAgo: "5d ago",
-  },
-  {
-    author: "jael holzman",
-    title: "\u201cCan\u2019t believe I\u2019m just a dateline to my friends.\u201d",
-    timeAgo: "Oct 26",
-  },
-  {
-    author: "Jeff Maysh",
-    title: "I Bought a Witches\u2019 Prison",
-    timeAgo: "Oct 28, 2020",
-    featured: true,
-  },
-];
+const noop = () => {};
 
-export default function Notifications() {
-  const navigate = useNavigate();
+const Notifications = ({ showSidebar = true, embedded = false }) => {
+  const { user } = useAuth();
+  const socketContext = useSocketContext() || {};
   const {
-    notifications,
-    unreadCount,
-    loading,
+    notifications = [],
+    unreadCount = 0,
+    loading = false,
     error,
-    hasMore,
-    markAsRead,
-    markAllAsRead,
-    loadMore,
-  } = useSocketContext();
+    hasMore = false,
+    markAllAsRead = noop,
+    markAsRead = noop,
+    loadMore = noop,
+  } = socketContext;
 
-  const [activeTab, setActiveTab] = useState("all");
+  const [activeTab, setActiveTab] = useState(TABS[0].id);
 
   const filteredNotifications = useMemo(() => {
-    if (activeTab === "responses") {
-      return notifications.filter((item) => item.type === "comment" || item.type === "reply");
+    if (activeTab === "unread") {
+      return notifications.filter((item) => !item.isRead);
     }
     return notifications;
   }, [notifications, activeTab]);
 
-  const handleOpenNotification = (notification) => {
+  const containerClass = embedded
+    ? "notifications-page notifications-page--embedded"
+    : "notifications-page";
+
+  const layoutClass = showSidebar
+    ? "notifications-layout"
+    : "notifications-layout notifications-layout--single";
+
+  const canMarkAllRead = unreadCount > 0 && !loading;
+  const showEmptyState = !loading && !filteredNotifications.length;
+
+  const handleNotificationSelect = (notification) => {
+    if (!notification) {
+      return;
+    }
+
     if (!notification.isRead) {
       markAsRead(notification.id);
     }
 
-    const destination = notification.metadata?.postSlug
-      ? `/post/${notification.metadata.postSlug}`
-      : notification.post?.slug
-      ? `/post/${notification.post.slug}`
-      : null;
-
-    if (destination) {
-      navigate(destination);
+    const targetSlug = notification.post?.slug;
+    if (targetSlug) {
+      window.location.href = `/post/${targetSlug}`;
     }
   };
 
   return (
-    <div className="notifications-page">
+    <div className={containerClass}>
       <header className="notifications-hero">
         <div className="notifications-hero__content">
           <h1>Notifications</h1>
-          <p>Stay on top of who\u2019s reading, responding, and following your work.</p>
+          <p>
+            {user?.name ? `${user.name}, here is what you missed while you were away.` : "Stay up to date with the latest activity on your stories."}
+          </p>
         </div>
         <div className="notifications-actions">
-          {unreadCount > 0 && (
-            <button type="button" onClick={markAllAsRead} className="notifications-mark-all">
-              Mark all as read
-            </button>
-          )}
+          <button
+            type="button"
+            className="notifications-mark-all"
+            onClick={markAllAsRead}
+            disabled={!canMarkAllRead}
+          >
+            Mark all as read
+          </button>
         </div>
       </header>
 
-      <div className="notifications-tabs" role="tablist">
-        <button
-          type="button"
-          role="tab"
-          aria-selected={activeTab === "all"}
-          className={`notifications-tab${activeTab === "all" ? " notifications-tab--active" : ""}`}
-          onClick={() => setActiveTab("all")}
-        >
-          All
-          {activeTab === "all" && unreadCount > 0 && (
-            <span className="notifications-tab__badge">{unreadCount > 9 ? "9+" : unreadCount}</span>
-          )}
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={activeTab === "responses"}
-          className={`notifications-tab${activeTab === "responses" ? " notifications-tab--active" : ""}`}
-          onClick={() => setActiveTab("responses")}
-        >
-          Responses
-        </button>
-      </div>
+      <nav className="notifications-tabs" aria-label="Notification filters">
+        {TABS.map((tab) => {
+          const isActive = tab.id === activeTab;
+          const badge = tab.id === "unread" ? unreadCount : notifications.length;
 
-      {error && <div className="notifications-alert">{error}</div>}
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              className={`notifications-tab${isActive ? " notifications-tab--active" : ""}`}
+              onClick={() => setActiveTab(tab.id)}
+            >
+              {tab.label}
+              <span className="notifications-tab__badge">{badge}</span>
+            </button>
+          );
+        })}
+      </nav>
 
-      <div className="notifications-layout">
+      {error ? <div className="notifications-alert">{error}</div> : null}
+
+      <div className={layoutClass}>
         <section className="notifications-list" aria-live="polite">
-          {loading && notifications.length === 0 && (
-            <div className="notifications-empty">Loading your latest activity&hellip;</div>
-          )}
-
-          {!loading && filteredNotifications.length === 0 && (
+          {loading && !notifications.length ? <p className="notifications-empty">Loading notifications…</p> : null}
+          {showEmptyState ? (
             <div className="notifications-empty">
-              <p>No notifications yet.</p>
-              <p>When readers engage with your stories, you\u2019ll see updates here.</p>
+              <p>No notifications just yet</p>
+              <p>You will see new activity here as soon as it happens.</p>
             </div>
-          )}
+          ) : null}
 
           {filteredNotifications.map((notification) => (
-            <NotificationRow
+            <NotificationItem
               key={notification.id}
               notification={notification}
-              onOpen={handleOpenNotification}
+              onSelect={handleNotificationSelect}
             />
           ))}
 
-          {hasMore && (
-            <button type="button" className="notifications-older" onClick={loadMore}>
-              Older notifications
+          {hasMore ? (
+            <button type="button" className="notifications-older" onClick={loadMore} disabled={loading}>
+              {loading ? "Loading…" : "Load older notifications"}
             </button>
-          )}
+          ) : null}
         </section>
 
-        <aside className="notifications-sidebar">
-          <div className="notifications-card">
-            <h2>Staff Picks</h2>
-            <ul>
-              {STAFF_PICKS.map((pick) => (
-                <li key={pick.title}>
-                  <p className="notifications-card__title">{pick.title}</p>
+        {showSidebar ? (
+          <aside className="notifications-sidebar" aria-label="Notification insights">
+            <div className="notifications-card">
+              <h2>Stay in the loop</h2>
+              <ul>
+                <li>
+                  <p className="notifications-card__title">Real-time updates</p>
                   <p className="notifications-card__meta">
-                    {pick.author}
-                    {pick.featured && <span className="notifications-card__icon" aria-hidden="true">\u2605</span>}
+                    Never miss a reaction or a new follower. We will keep this list fresh as activity happens.
                   </p>
-                  <span className="notifications-card__time">{pick.timeAgo}</span>
                 </li>
-              ))}
-            </ul>
-          </div>
-        </aside>
+                <li>
+                  <p className="notifications-card__title">Pro tip</p>
+                  <p className="notifications-card__meta">
+                    Tap a notification to jump straight to the story or profile it references.
+                  </p>
+                </li>
+              </ul>
+            </div>
+          </aside>
+        ) : null}
       </div>
     </div>
   );
-}
+};
+
+export default Notifications;

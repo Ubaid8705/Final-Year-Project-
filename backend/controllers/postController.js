@@ -251,11 +251,17 @@ export const listPosts = async (req, res) => {
     const skip = (Math.max(Number(page) || 1, 1) - 1) * numericLimit;
 
     const filter = {};
-    if (status === "published") {
-      filter.isPublished = true;
-    } else if (status === "draft") {
+    const viewerId = req.user?._id;
+    let selectedAuthorId = null;
+
+    if (status === "draft") {
+      if (!viewerId) {
+        return res.status(401).json({ error: "Authentication required" });
+      }
       filter.isPublished = false;
-      filter.author = req.user?._id;
+      filter.author = viewerId;
+    } else {
+      filter.isPublished = true;
     }
 
     if (tag) {
@@ -268,6 +274,24 @@ export const listPosts = async (req, res) => {
         return res.json({ items: [], pagination: { total: 0, page: Number(page) || 1 } });
       }
       filter.author = user._id;
+      selectedAuthorId = user._id;
+    }
+
+    const authorMatchesViewer =
+      selectedAuthorId &&
+      viewerId &&
+      selectedAuthorId.toString() === viewerId.toString();
+
+    if (filter.isPublished !== false) {
+      const visibilityConditions = [{ visibility: "PUBLIC" }];
+
+      if (viewerId) {
+        visibilityConditions.push({ author: viewerId });
+      }
+
+      if (!authorMatchesViewer) {
+        filter.$or = visibilityConditions;
+      }
     }
 
     const sortOption =
