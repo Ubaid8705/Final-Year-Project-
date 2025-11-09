@@ -4,6 +4,7 @@ import {
   updateUser,
   deleteUser,
   getUserByUsername,
+  updateTopics,
 } from "../controllers/userController.js";
 import {
   followUser,
@@ -23,6 +24,7 @@ const router = express.Router();
 router.get("/me", authenticate, getCurrentUser);
 router.get("/me/follow-stats", authenticate, getMyFollowStats);
 router.put("/update", authenticate, updateUser);
+router.put("/me/topics", authenticate, updateTopics);
 router.delete("/delete", authenticate, deleteUser);
 
 router.post("/:username/follow", authenticate, followUser);

@@ -15,7 +15,7 @@ export const authenticate = async (req, res, next) => {
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     const user = await User.findById(decoded.userId)
-      .select("_id email username name avatar bio pronouns membershipStatus");
+      .select("_id email username name avatar bio pronouns membershipStatus topics");
 
     if (!user) {
       return res.status(401).json({ error: "Invalid token" });
@@ -46,7 +46,7 @@ export const optionalAuthenticate = async (req, res, next) => {
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     const user = await User.findById(decoded.userId).select(
-      "_id email username name avatar"
+      "_id email username name avatar topics"
     );
 
     if (user) {

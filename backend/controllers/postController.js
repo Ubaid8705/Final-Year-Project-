@@ -2,6 +2,9 @@ import mongoose from "mongoose";
 import Post from "../models/Post.js";
 import Comment from "../models/Comments.js";
 import User from "../models/User.js";
+import Relationship from "../models/Relationship.js";
+import HiddenPost from "../models/HiddenPost.js";
+import PostReport from "../models/PostReport.js";
 import UserSettings from "../models/Settings.js";
 import slugify from "../utils/slugify.js";
 import { countWords, estimateReadingTime } from "../utils/postMetrics.js";
@@ -241,10 +244,10 @@ export const listPosts = async (req, res) => {
     const {
       page = 1,
       limit = 10,
-      tag,
       status = "published",
       author,
       sort = "recent",
+      scope,
     } = req.query;
 
     const numericLimit = Math.min(Number(limit) || 10, 50);
@@ -252,6 +255,21 @@ export const listPosts = async (req, res) => {
 
     const filter = {};
     const viewerId = req.user?._id;
+    const hiddenPostDocs = viewerId
+      ? await HiddenPost.find({ user: viewerId }).select("post").lean()
+      : [];
+    const hiddenPostIds = hiddenPostDocs
+      .map((entry) => entry.post)
+      .filter((value) => Boolean(value));
+    const viewerTopics = Array.isArray(req.user?.topics)
+      ? Array.from(
+          new Set(
+            req.user.topics
+              .map((topic) => (typeof topic === "string" ? topic.trim().toLowerCase() : ""))
+              .filter(Boolean)
+          )
+        )
+      : [];
     let selectedAuthorId = null;
 
     if (status === "draft") {
@@ -264,8 +282,14 @@ export const listPosts = async (req, res) => {
       filter.isPublished = true;
     }
 
-    if (tag) {
-      filter.tags = tag.toLowerCase();
+    const scopeToken = (scope || "forYou").toString().trim().toLowerCase();
+    const resolvedScope = scopeToken === "featured" ? "featured" : "forYou";
+
+    if (hiddenPostIds.length > 0) {
+      filter._id = {
+        ...(filter._id || {}),
+        $nin: hiddenPostIds,
+      };
     }
 
     if (author) {
@@ -275,6 +299,31 @@ export const listPosts = async (req, res) => {
       }
       filter.author = user._id;
       selectedAuthorId = user._id;
+    }
+
+    if (resolvedScope === "featured" && !filter.author) {
+      if (!viewerId) {
+        return res.status(401).json({ error: "Authentication required" });
+      }
+
+      const relationships = await Relationship.find({
+        follower: viewerId,
+        status: "following",
+      }).select("following");
+
+      const followedIds = relationships
+        .map((rel) => rel.following)
+        .filter(Boolean)
+        .map((id) => id.toString());
+
+      const uniqueIds = new Set(followedIds);
+      uniqueIds.add(viewerId.toString());
+
+      if (uniqueIds.size > 0) {
+        filter.author = {
+          $in: Array.from(uniqueIds).map((id) => new mongoose.Types.ObjectId(id)),
+        };
+      }
     }
 
     const authorMatchesViewer =
@@ -299,12 +348,85 @@ export const listPosts = async (req, res) => {
         ? { clapCount: -1, responseCount: -1, publishedAt: -1 }
         : { publishedAt: -1, updatedAt: -1 };
 
+    const shouldApplyTopicScoring =
+      resolvedScope === "forYou" &&
+      filter.isPublished !== false &&
+      viewerTopics.length > 0 &&
+      !author;
+
+    if (shouldApplyTopicScoring) {
+  const matchStage = { ...filter };
+
+      const pipeline = [
+        { $match: matchStage },
+        {
+          $addFields: {
+            topicScore: {
+              $size: {
+                $setIntersection: ["$tags", viewerTopics],
+              },
+            },
+          },
+        },
+        {
+          $sort: {
+            topicScore: -1,
+            publishedAt: -1,
+            updatedAt: -1,
+          },
+        },
+        {
+          $facet: {
+            items: [
+              { $skip: skip },
+              { $limit: numericLimit },
+              {
+                $lookup: {
+                  from: "users",
+                  localField: "author",
+                  foreignField: "_id",
+                  as: "author",
+                  pipeline: [
+                    {
+                      $project: {
+                        username: 1,
+                        name: 1,
+                        avatar: 1,
+                        bio: 1,
+                        membershipStatus: 1,
+                      },
+                    },
+                  ],
+                },
+              },
+              { $unwind: "$author" },
+            ],
+            meta: [{ $count: "total" }],
+          },
+        },
+      ];
+
+      const [result] = await Post.aggregate(pipeline);
+      const items = Array.isArray(result?.items) ? result.items : [];
+      const total = Array.isArray(result?.meta) && result.meta.length > 0 ? result.meta[0].total : 0;
+
+      res.json({
+        items: items.map(hydratePost),
+        pagination: {
+          total,
+          page: Number(page) || 1,
+          limit: numericLimit,
+        },
+      });
+      return;
+    }
+
     const [items, total] = await Promise.all([
       Post.find(filter)
         .sort(sortOption)
         .skip(skip)
         .limit(numericLimit)
-  .populate("author", "username name avatar bio membershipStatus")
+        .populate("author", "username name avatar bio membershipStatus")
         .lean(),
       Post.countDocuments(filter),
     ]);
@@ -575,6 +697,44 @@ export const clapPost = async (req, res) => {
     res.json({ clapCount: updated.clapCount });
   } catch (error) {
     res.status(500).json({ error: "Failed to clap post" });
+  }
+};
+
+export const reportPost = async (req, res) => {
+  try {
+    const { idOrSlug } = req.params;
+    const rawReason = req.body?.reason;
+    const rawDetails = req.body?.details;
+
+    const reason = typeof rawReason === "string" ? rawReason.trim().slice(0, 120) : "";
+    if (!reason) {
+      return res.status(400).json({ error: "A report reason is required" });
+    }
+
+    const post = await findPostByParam(idOrSlug);
+    if (!post) {
+      return res.status(404).json({ error: "Post not found" });
+    }
+
+    const details = typeof rawDetails === "string" ? rawDetails.trim().slice(0, 2000) : "";
+
+    await PostReport.findOneAndUpdate(
+      { user: req.user._id, post: post._id },
+      {
+        $set: {
+          reason,
+          details: details || undefined,
+        },
+        $setOnInsert: {
+          createdAt: new Date(),
+        },
+      },
+      { new: true, upsert: true }
+    );
+
+    res.status(201).json({ reported: true });
+  } catch (error) {
+    res.status(500).json({ error: "Failed to submit report" });
   }
 };
 

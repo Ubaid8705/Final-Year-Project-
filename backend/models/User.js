@@ -24,6 +24,11 @@ const userSchema = new mongoose.Schema({
   membershipStatus: { type: Boolean, default: false },
   createdAt: { type: Date, default: Date.now },
   lastLogin: { type: Date },
+    topics: {
+      type: [{ type: String, trim: true, lowercase: true }],
+      default: [],
+    },
+    topicsUpdatedAt: { type: Date },
 
   savedPosts: [
     {

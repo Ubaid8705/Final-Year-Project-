@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { API_BASE_URL } from "../config";
+import { normalizeTopicSlug } from "../resources/topics";
 
 const STORAGE_TOKEN_KEY = "authToken";
 const STORAGE_USER_KEY = "authUser";
@@ -7,6 +8,26 @@ const STORAGE_USER_KEY = "authUser";
 const AuthContext = createContext(null);
 
 const AVATAR_FALLBACK_BASE = "https://api.dicebear.com/7.x/initials/svg?seed=";
+
+const normalizeTopicsList = (topics) => {
+  if (!Array.isArray(topics)) {
+    return [];
+  }
+
+  const unique = [];
+
+  topics.forEach((topic) => {
+    const slug = normalizeTopicSlug(topic);
+    if (!slug) {
+      return;
+    }
+    if (!unique.includes(slug)) {
+      unique.push(slug);
+    }
+  });
+
+  return unique;
+};
 
 const deriveAvatar = (user = {}) => {
   const candidate = [
@@ -32,6 +53,7 @@ const normalizeUser = (user) => {
 
   const normalized = { ...user };
   normalized.avatar = deriveAvatar(normalized);
+  normalized.topics = normalizeTopicsList(normalized.topics);
 
   if (!normalized.name && normalized.username) {
     normalized.name = normalized.username;

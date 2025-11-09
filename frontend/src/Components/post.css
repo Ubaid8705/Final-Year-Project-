@@ -138,21 +138,112 @@
   color: #1a8917;
 }
 
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .post-card__actions {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 12px;
-  color: #6b6b6b;
+  color: #1f2933;
+  flex-wrap: wrap;
 }
 
-.post-card__action {
+.post-card__action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid rgba(17, 24, 39, 0.12);
+  background: #ffffff;
+  color: #1f2933;
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-size: 0.95rem;
+  font-weight: 500;
   cursor: pointer;
-  font-size: 1.2rem;
-  transition: color 0.2s ease;
+  transition: color 0.2s ease, border-color 0.2s ease, background 0.2s ease;
 }
 
-.post-card__action:hover {
+.post-card__action-btn:hover:not(:disabled),
+.post-card__action-btn:focus-visible {
+  border-color: rgba(26, 137, 23, 0.4);
   color: #1a8917;
+  outline: none;
+}
+
+.post-card__action-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.post-card__action-btn--active {
+  background: rgba(26, 137, 23, 0.12);
+  color: #1a8917;
+  border-color: rgba(26, 137, 23, 0.24);
+}
+
+.post-card__action-btn--menu {
+  padding: 6px 10px;
+  border-radius: 50%;
+  width: 36px;
+  height: 36px;
+  justify-content: center;
+}
+
+.post-card__action-icon {
+  width: 18px;
+  height: 18px;
+}
+
+.post-card__action-text {
+  font-size: 0.9rem;
+}
+
+.post-card__actions-overflow {
+  position: relative;
+}
+
+.post-card__actions-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 180px;
+  background: #ffffff;
+  border: 1px solid rgba(17, 24, 39, 0.12);
+  border-radius: 12px;
+  box-shadow: 0 18px 35px rgba(15, 23, 42, 0.12);
+  padding: 8px 0;
+  z-index: 15;
+  display: flex;
+  flex-direction: column;
+}
+
+.post-card__actions-menu button {
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 10px 16px;
+  text-align: left;
+  font-size: 0.92rem;
+  color: #374151;
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.post-card__actions-menu button:hover,
+.post-card__actions-menu button:focus-visible {
+  background: rgba(26, 137, 23, 0.08);
+  color: #1a8917;
+  outline: none;
 }
 
 .post-card__media {
@@ -242,5 +333,13 @@
   .post-card__stats {
     font-size: 0.85rem;
     gap: 12px;
+  }
+
+  .post-card__action-btn {
+    padding: 6px 10px;
+  }
+
+  .post-card__action-text {
+    display: none;
   }
 }

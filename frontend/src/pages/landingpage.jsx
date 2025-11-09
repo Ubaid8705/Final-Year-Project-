@@ -7,25 +7,26 @@ import FollowSuggestions from "../Components/followsuggestions";
 import Notifications from "./notifications";
 import PostsFeed from "../Components/PostsFeed";
 import { useSocketContext } from "../contexts/SocketContext";
-
-const FILTERS = [
+const FEED_FILTERS = [
   { id: "forYou", label: "For you" },
-  { id: "following", label: "Following" },
-  { id: "featured", label: "Featured", badge: "New" },
-  { id: "dataScience", label: "Data Science" },
-  { id: "programming", label: "Programming" },
+  { id: "featured", label: "Featured" },
 ];
 
 const LandingPage = () => {
   const [showInfoBox, setShowInfoBox] = useState(true);
   const [activeView, setActiveView] = useState("posts");
+  const [postsSelection, setPostsSelection] = useState("forYou");
   const location = useLocation();
   const navigate = useNavigate();
   const socketContext = useSocketContext();
   const unreadCount = socketContext?.unreadCount ?? 0;
 
   useEffect(() => {
-    const handleShowPosts = () => {
+    const handleShowPosts = (event) => {
+      const selectionFromEvent = event?.detail?.selection;
+      if (selectionFromEvent === "forYou" || selectionFromEvent === "featured") {
+        setPostsSelection(selectionFromEvent);
+      }
       setActiveView("posts");
     };
 
@@ -49,6 +50,11 @@ const LandingPage = () => {
 
     const view = location.state.view === "notifications" ? "notifications" : "posts";
 
+    const selectionFromState = location.state.selection;
+    if (selectionFromState === "forYou" || selectionFromState === "featured") {
+      setPostsSelection(selectionFromState);
+    }
+
     if (view === "notifications") {
       setActiveView("notifications");
     } else {
@@ -67,36 +73,64 @@ const LandingPage = () => {
   return (
     <div className="landing-container">
       <div className="main-content">
-        <div className="filter-bar">
-          <span className="filter-icon">+</span>
-          {FILTERS.map((filter) => (
+        {!isNotificationsView && (
+          <div className="feed-toggle-bar" role="toolbar" aria-label="Story filters">
+            <div className="feed-toggle-group" role="group" aria-label="Feed options">
+              {FEED_FILTERS.map((filter) => {
+                const active = postsSelection === filter.id;
+                return (
+                  <button
+                    key={filter.id}
+                    type="button"
+                    className={`feed-toggle-btn${active ? " feed-toggle-btn--active" : ""}`}
+                    onClick={() => {
+                      setPostsSelection(filter.id);
+                      setActiveView("posts");
+                    }}
+                    aria-pressed={active}
+                  >
+                    {filter.label}
+                  </button>
+                );
+              })}
+            </div>
             <button
-              key={filter.id}
               type="button"
-              className={`filter-btn${
-                !isNotificationsView && filter.id === "forYou" ? " active" : ""
-              }`}
-              onClick={() => setActiveView("posts")}
+              className={`feed-toggle-btn feed-toggle-btn--notifications${isNotificationsView ? " feed-toggle-btn--active" : ""}`}
+              onClick={handleNotificationsClick}
+              aria-pressed={isNotificationsView}
             >
-              {filter.label}
-              {filter.badge && <span className="new-badge">{filter.badge}</span>}
+              Notifications
+              {unreadCount > 0 && (
+                <span className="feed-toggle-btn__badge" aria-label={`${unreadCount} unread notifications`}>
+                  {unreadCount > 9 ? "9+" : unreadCount}
+                </span>
+              )}
             </button>
-          ))}
-          <button
-            type="button"
-            className={`filter-btn filter-btn--notifications ${isNotificationsView ? "active" : ""}`}
-            onClick={handleNotificationsClick}
-          >
-            Notifications
-            {unreadCount > 0 && (
-              <span className="filter-btn__badge" aria-label={`${unreadCount} unread notifications`}>
-                {unreadCount > 9 ? "9+" : unreadCount}
-              </span>
-            )}
-          </button>
-        </div>
+          </div>
+        )}
 
-        {isNotificationsView ? <Notifications showSidebar={false} embedded /> : <PostsFeed />}
+        {isNotificationsView ? (
+          <div className="notifications-wrapper">
+            <div className="notifications-toolbar">
+              <button
+                type="button"
+                className="notifications-toolbar__button"
+                onClick={() => setActiveView("posts")}
+              >
+                Back to stories
+              </button>
+              {unreadCount > 0 && (
+                <span className="notifications-toolbar__badge" aria-label={`${unreadCount} unread notifications`}>
+                  {unreadCount > 9 ? "9+" : unreadCount}
+                </span>
+              )}
+            </div>
+            <Notifications showSidebar={false} embedded />
+          </div>
+        ) : (
+          <PostsFeed selection={postsSelection} />
+        )}
       </div>
       <div className="side-content">
         <p>Staff Picks</p>

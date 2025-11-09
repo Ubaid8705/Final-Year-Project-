@@ -60,6 +60,7 @@ export default function (passportInstance) {
                 customDomainState: 'none',
                 membershipStatus: false,
                 pronouns: [],
+                topics: [],
                 lastLogin: new Date(),
               });
 
@@ -135,6 +136,7 @@ export default function (passportInstance) {
                 customDomainState: 'none',
                 membershipStatus: false,
                 pronouns: [],
+                topics: [],
                 lastLogin: new Date(),
               });
 

@@ -1,5 +1,38 @@
-import React, { useMemo } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "./post.css";
+import { API_BASE_URL } from "../config";
+import { useAuth } from "../contexts/AuthContext";
+
+const BookmarkIcon = ({ active }) => (
+  <svg
+    className="post-card__action-icon"
+    viewBox="0 0 24 24"
+    role="presentation"
+  >
+    <path
+      d="M6 3a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18l-8-3.6L6 21V3z"
+      fill={active ? "currentColor" : "none"}
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinejoin="round"
+    />
+  </svg>
+);
+
+const MinusCircleIcon = () => (
+  <svg className="post-card__action-icon" viewBox="0 0 24 24" role="presentation">
+    <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" strokeWidth="1.6" />
+    <line x1="8" y1="12" x2="16" y2="12" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+  </svg>
+);
+
+const EllipsisIcon = () => (
+  <svg className="post-card__action-icon" viewBox="0 0 24 24" role="presentation">
+    <circle cx="5" cy="12" r="1.5" fill="currentColor" />
+    <circle cx="12" cy="12" r="1.5" fill="currentColor" />
+    <circle cx="19" cy="12" r="1.5" fill="currentColor" />
+  </svg>
+);
 
 const FALLBACK_COVER_IMAGE =
   "https://images.unsplash.com/photo-1498050108023-c5249f4df085?auto=format&fit=crop&w=900&q=80";
@@ -34,8 +67,40 @@ const pickSummary = (post = {}) => {
 
 const classList = (...values) => values.filter(Boolean).join(" ");
 
-const Post = ({ post, variant = "default" }) => {
-  const safePost = post || {};
+const resolvePostId = (candidate = {}) => {
+  const candidates = [candidate._id, candidate.id, candidate.metadata?.id];
+  for (const value of candidates) {
+    if (!value) {
+      continue;
+    }
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+    if (typeof value === "object" && typeof value.toString === "function") {
+      const stringValue = value.toString();
+      if (stringValue) {
+        return stringValue;
+      }
+    }
+  }
+  return "";
+};
+
+const Post = ({
+  post,
+  variant = "default",
+  isSaved = false,
+  onToggleSave,
+  onShowLess,
+  onActionFeedback,
+}) => {
+  const { token } = useAuth();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [hiding, setHiding] = useState(false);
+  const menuRef = useRef(null);
+
+  const safePost = useMemo(() => post || {}, [post]);
   const author = safePost.author || {};
 
   const displayTitle = safePost.title || "Untitled story";
@@ -49,14 +114,195 @@ const Post = ({ post, variant = "default" }) => {
   const responseCount = safePost.responseCount ?? safePost.comments ?? 0;
   const hasImage = Boolean(coverImage);
   const isPremiumAuthor = Boolean(author.isPremium);
+  const postId = resolvePostId(safePost);
+  const postSlug = safePost.slug || postId;
 
   const authorAvatar = useMemo(
     () => author.avatar || buildFallbackAvatar(displayAuthor),
     [author.avatar, displayAuthor]
   );
 
+  const postUrl = useMemo(() => {
+    if (!postSlug) {
+      return "";
+    }
+
+    if (typeof window !== "undefined" && window.location?.origin) {
+      return `${window.location.origin}/post/${postSlug}`;
+    }
+
+    return `/post/${postSlug}`;
+  }, [postSlug]);
+
+  useEffect(() => {
+    if (!menuOpen) {
+      return undefined;
+    }
+
+    const handlePointerDown = (event) => {
+      if (menuRef.current && !menuRef.current.contains(event.target)) {
+        setMenuOpen(false);
+      }
+    };
+
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape") {
+        setMenuOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [menuOpen]);
+
+  const handleSaveClick = useCallback(() => {
+    if (!onToggleSave || saving) {
+      return;
+    }
+
+    setSaving(true);
+    Promise.resolve(onToggleSave(safePost))
+      .catch(() => {})
+      .finally(() => setSaving(false));
+  }, [onToggleSave, safePost, saving]);
+
+  const handleShowLessClick = useCallback(() => {
+    if (!onShowLess || hiding) {
+      return;
+    }
+
+    setHiding(true);
+    Promise.resolve(onShowLess(safePost))
+      .catch(() => {})
+      .finally(() => {
+        setHiding(false);
+        setMenuOpen(false);
+      });
+  }, [onShowLess, safePost, hiding]);
+
+  const handleCopyLink = useCallback(async () => {
+    if (!postUrl) {
+      onActionFeedback?.("Unable to copy link for this story.", "error");
+      return;
+    }
+
+    try {
+      if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(postUrl);
+      } else if (typeof document !== "undefined") {
+        const temporary = document.createElement("textarea");
+        temporary.value = postUrl;
+        temporary.setAttribute("readonly", "");
+        temporary.style.position = "absolute";
+        temporary.style.left = "-9999px";
+        document.body.appendChild(temporary);
+        temporary.select();
+        document.execCommand("copy");
+        document.body.removeChild(temporary);
+      }
+
+      onActionFeedback?.("Link copied to clipboard.", "success");
+    } catch (error) {
+      console.error(error);
+      onActionFeedback?.("Unable to copy link for this story.", "error");
+    } finally {
+      setMenuOpen(false);
+    }
+  }, [postUrl, onActionFeedback]);
+
+  const handleShare = useCallback(async () => {
+    if (!postUrl) {
+      onActionFeedback?.("Unable to share this story right now.", "error");
+      setMenuOpen(false);
+      return;
+    }
+
+    try {
+      if (typeof navigator !== "undefined" && navigator.share) {
+        await navigator.share({
+          title: displayTitle,
+          text: `${displayTitle} — ${displayAuthor}`,
+          url: postUrl,
+        });
+        onActionFeedback?.("Story ready to share!", "info");
+      } else {
+        await handleCopyLink();
+        return;
+      }
+    } catch (error) {
+      if (error?.name === "AbortError") {
+        return;
+      }
+      console.error(error);
+      onActionFeedback?.("Unable to share this story right now.", "error");
+    } finally {
+      setMenuOpen(false);
+    }
+  }, [postUrl, displayTitle, displayAuthor, handleCopyLink, onActionFeedback]);
+
+  const handleReport = useCallback(async () => {
+    if (!postId) {
+      onActionFeedback?.("Unable to report this story.", "error");
+      setMenuOpen(false);
+      return;
+    }
+
+    if (!token) {
+      onActionFeedback?.("Sign in to report stories.", "error");
+      setMenuOpen(false);
+      return;
+    }
+
+    let reason = "Inappropriate content";
+
+    if (typeof window !== "undefined") {
+      const input = window.prompt(
+        "Tell us briefly why you are reporting this story:",
+        reason
+      );
+
+      if (input === null) {
+        setMenuOpen(false);
+        return;
+      }
+
+      reason = input.trim() || reason;
+    }
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/posts/${postId}/report`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ reason }),
+      });
+
+      const payload = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(payload.error || "Unable to submit report right now.");
+      }
+
+      onActionFeedback?.("Thanks for letting us know. We'll review this story.", "info");
+    } catch (error) {
+      console.error(error);
+      onActionFeedback?.(error.message || "Unable to submit report right now.", "error");
+    } finally {
+      setMenuOpen(false);
+    }
+  }, [postId, token, onActionFeedback]);
+
   return (
-    <article className={classList("post-card", `post-card--${variant}`, hasImage ? "" : "post-card--no-image")}> 
+    <article
+      className={classList("post-card", `post-card--${variant}`, hasImage ? "" : "post-card--no-image")}
+    >
       <div className="post-card__body">
         <header className="post-card__meta">
           <img src={authorAvatar} alt={displayAuthor} className="post-card__author" />
@@ -88,10 +334,63 @@ const Post = ({ post, variant = "default" }) => {
             <span className="post-card__stat">&#128079; {clapCount}</span>
             <span className="post-card__stat">&#128172; {responseCount}</span>
           </div>
-          <div className="post-card__actions">
-            <span className="post-card__action">&#9711;</span>
-            <span className="post-card__action">&#43;</span>
-            <span className="post-card__action">&#8942;</span>
+          <div className="post-card__actions" ref={menuRef}>
+            <button
+              type="button"
+              className={classList(
+                "post-card__action-btn",
+                isSaved ? "post-card__action-btn--active" : ""
+              )}
+              onClick={handleSaveClick}
+              aria-pressed={isSaved}
+              disabled={saving}
+              title={isSaved ? "Remove from reading list" : "Save to reading list"}
+            >
+              <BookmarkIcon active={isSaved} />
+              <span className="post-card__action-text">{isSaved ? "Saved" : "Save"}</span>
+            </button>
+            <button
+              type="button"
+              className="post-card__action-btn"
+              onClick={handleShowLessClick}
+              disabled={hiding}
+              title="Show fewer stories like this"
+            >
+              <MinusCircleIcon />
+              <span className="post-card__action-text">Show less</span>
+            </button>
+            <div className="post-card__actions-overflow">
+              <button
+                type="button"
+                className="post-card__action-btn post-card__action-btn--menu"
+                onClick={() => setMenuOpen((open) => !open)}
+                aria-expanded={menuOpen}
+                aria-haspopup="menu"
+                title="More options"
+              >
+                <EllipsisIcon />
+                <span className="sr-only">More options</span>
+              </button>
+              {menuOpen && (
+                <ul className="post-card__actions-menu" role="menu">
+                  <li role="presentation">
+                    <button type="button" role="menuitem" onClick={handleCopyLink}>
+                      Copy link
+                    </button>
+                  </li>
+                  <li role="presentation">
+                    <button type="button" role="menuitem" onClick={handleShare}>
+                      Share story
+                    </button>
+                  </li>
+                  <li role="presentation">
+                    <button type="button" role="menuitem" onClick={handleReport}>
+                      Report story
+                    </button>
+                  </li>
+                </ul>
+              )}
+            </div>
           </div>
         </footer>
       </div>

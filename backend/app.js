@@ -10,6 +10,7 @@ import commentsRoutes from './routes/comments.js';
 import settingsRoutes from './routes/settings.js';
 import savedRoutes from './routes/saved.js';
 import notificationsRoutes from './routes/notifications.js';
+import hiddenRoutes from './routes/hidden.js';
 
 const app = express();
 
@@ -48,6 +49,7 @@ app.use('/api/posts', postsRoutes);
 app.use('/api/comments', commentsRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/saved-posts', savedRoutes);
+app.use('/api/hidden-posts', hiddenRoutes);
 app.use('/api/notifications', notificationsRoutes);
 
 // Error handling middleware

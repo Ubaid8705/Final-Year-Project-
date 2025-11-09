@@ -7,9 +7,51 @@ import {
 } from "../services/relationshipService.js";
 
 const OWN_USER_PROJECTION =
-  "username name email avatar bio pronouns hasSubdomain customDomainState membershipStatus createdAt updatedAt";
+  "username name email avatar bio pronouns topics topicsUpdatedAt hasSubdomain customDomainState membershipStatus createdAt updatedAt";
 const PUBLIC_USER_PROJECTION =
-  "username name avatar bio pronouns membershipStatus createdAt updatedAt";
+  "username name avatar bio pronouns membershipStatus topics createdAt updatedAt";
+
+const MAX_TOPIC_COUNT = 12;
+
+const slugifyTopic = (value) => {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const trimmed = value.trim().toLowerCase();
+  if (!trimmed) {
+    return null;
+  }
+
+  const normalized = trimmed
+    .replace(/[^a-z0-9\s-]/g, "")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+
+  return normalized || null;
+};
+
+const sanitizeTopicsInput = (topics) => {
+  if (!topics) {
+    return [];
+  }
+
+  const candidateList = Array.isArray(topics) ? topics : [topics];
+  const unique = [];
+
+  candidateList.forEach((candidate) => {
+    const slug = slugifyTopic(candidate);
+    if (!slug) {
+      return;
+    }
+    if (!unique.includes(slug)) {
+      unique.push(slug);
+    }
+  });
+
+  return unique.slice(0, MAX_TOPIC_COUNT);
+};
 
 const sanitizeOwnUser = (userDoc) => {
   if (!userDoc) {
@@ -26,6 +68,8 @@ const sanitizeOwnUser = (userDoc) => {
     avatar: source.avatar,
     bio: source.bio,
     pronouns: source.pronouns,
+    topics: Array.isArray(source.topics) ? source.topics : [],
+    topicsUpdatedAt: source.topicsUpdatedAt,
     hasSubdomain: Boolean(source.hasSubdomain),
     customDomainState: source.customDomainState,
     membershipStatus: Boolean(source.membershipStatus),
@@ -48,6 +92,7 @@ const sanitizePublicUser = (userDoc) => {
     avatar: source.avatar,
     bio: source.bio,
     pronouns: source.pronouns,
+    topics: Array.isArray(source.topics) ? source.topics : [],
     membershipStatus: Boolean(source.membershipStatus),
     createdAt: source.createdAt,
     updatedAt: source.updatedAt,
@@ -84,6 +129,7 @@ export const updateUser = async (req, res) => {
       "avatar",
       "bio",
       "pronouns",
+      "topics",
       "hasSubdomain",
       "customDomainState",
     ];
@@ -94,6 +140,12 @@ export const updateUser = async (req, res) => {
         obj[key] = req.body[key];
         return obj;
       }, {});
+
+    if (Object.prototype.hasOwnProperty.call(updates, "topics")) {
+      const sanitizedTopics = sanitizeTopicsInput(updates.topics);
+      updates.topics = sanitizedTopics;
+      updates.topicsUpdatedAt = sanitizedTopics.length ? new Date() : null;
+    }
 
     const user = await User.findByIdAndUpdate(
       req.user._id,
@@ -170,5 +222,29 @@ export const getUserByUsername = async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ error: "Error fetching user profile" });
+  }
+};
+
+export const updateTopics = async (req, res) => {
+  try {
+    const sanitizedTopics = sanitizeTopicsInput(req.body?.topics);
+    const update = {
+      topics: sanitizedTopics,
+      topicsUpdatedAt: sanitizedTopics.length ? new Date() : null,
+    };
+
+    const user = await User.findByIdAndUpdate(
+      req.user._id,
+      { $set: update },
+      { new: true, runValidators: true }
+    ).select(OWN_USER_PROJECTION);
+
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    res.json({ user: sanitizeOwnUser(user) });
+  } catch (error) {
+    res.status(500).json({ error: "Error updating topics" });
   }
 };

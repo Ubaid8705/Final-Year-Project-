@@ -15,6 +15,12 @@
   gap: 12px 14px;
 }
 
+.recomendations-feedback {
+  margin-bottom: 10px;
+  font-size: 0.9rem;
+  color: #b91c1c;
+}
+
 .recomendation-chip {
   background: #f3f3f3;
   color: #222;
@@ -27,8 +33,21 @@
   border: none;
   outline: none;
   font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .recomendation-chip:hover {
   background: #e0e0e0;
+}
+
+.recomendation-chip--active {
+  background: #1a8917;
+  color: #fff;
+}
+
+.recomendation-chip:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }

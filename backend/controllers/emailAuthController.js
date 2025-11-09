@@ -56,6 +56,7 @@ export const register = async (req, res) => {
       customDomainState: 'none',
       membershipStatus: false,
       pronouns: [],
+      topics: [],
       lastLogin: null,
     });
 
@@ -152,6 +153,8 @@ export const login = async (req, res) => {
         name: user.name,
         avatar: user.avatar,
         lastLogin: user.lastLogin,
+        topics: Array.isArray(user.topics) ? user.topics : [],
+        topicsUpdatedAt: user.topicsUpdatedAt || null,
       }
     });
   } catch (error) {
