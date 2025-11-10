@@ -1,4 +1,5 @@
 import User from "../models/User.js";
+import Relationship from "../models/Relationship.js";
 import {
   RELATIONSHIP_STATUS,
   getFollowStatsForUser,
@@ -246,5 +247,103 @@ export const updateTopics = async (req, res) => {
     res.json({ user: sanitizeOwnUser(user) });
   } catch (error) {
     res.status(500).json({ error: "Error updating topics" });
+  }
+};
+
+export const getSuggestedUsers = async (req, res) => {
+  try {
+    const viewerId = req.user?._id;
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 6, 1), 20);
+
+    let viewerFollowing = new Set();
+
+    if (viewerId) {
+      const followingDocs = await Relationship.find({
+        follower: viewerId,
+        status: RELATIONSHIP_STATUS.FOLLOWING,
+      })
+        .select("following")
+        .lean();
+
+      viewerFollowing = new Set(
+        followingDocs
+          .map((doc) => doc.following?.toString())
+          .filter(Boolean)
+      );
+      viewerFollowing.add(viewerId.toString());
+    }
+
+    const followerAggregation = await Relationship.aggregate([
+      { $match: { status: RELATIONSHIP_STATUS.FOLLOWING } },
+      {
+        $group: {
+          _id: "$following",
+          followers: { $sum: 1 },
+          lastFollowedAt: { $max: "$createdAt" },
+        },
+      },
+      { $sort: { followers: -1, lastFollowedAt: -1 } },
+      { $limit: limit * 4 },
+    ]);
+
+    const aggregatedIds = followerAggregation
+      .map((entry) => (entry?._id ? entry._id.toString() : null))
+      .filter(Boolean);
+
+    const candidateIds = new Set();
+    aggregatedIds.forEach((id) => {
+      if (!viewerFollowing.has(id)) {
+        candidateIds.add(id);
+      }
+    });
+
+    if (candidateIds.size < limit * 2) {
+      const fallbackUsers = await User.find({})
+        .sort({ createdAt: -1 })
+        .limit(limit * 6)
+        .select(PUBLIC_USER_PROJECTION)
+        .lean();
+
+      fallbackUsers.forEach((userDoc) => {
+        const id = userDoc?._id?.toString();
+        if (!id || viewerFollowing.has(id)) {
+          return;
+        }
+        candidateIds.add(id);
+      });
+    }
+
+    const ids = Array.from(candidateIds).slice(0, limit * 2);
+
+    if (!ids.length) {
+      return res.json({ suggestions: [] });
+    }
+
+    const users = await User.find({ _id: { $in: ids } })
+      .select(PUBLIC_USER_PROJECTION)
+      .lean();
+
+    const orderedUsers = users.sort((a, b) => {
+      const aIdx = ids.indexOf(a._id.toString());
+      const bIdx = ids.indexOf(b._id.toString());
+      return aIdx - bIdx;
+    });
+
+    const payload = await Promise.all(
+      orderedUsers.slice(0, limit).map(async (userDoc) => {
+        const sanitized = sanitizePublicUser(userDoc);
+        const stats = await getFollowStatsForUser(userDoc._id);
+
+        return {
+          user: sanitized,
+          stats,
+          isFollowing: viewerFollowing.has(userDoc._id.toString()),
+        };
+      })
+    );
+
+    res.json({ suggestions: payload });
+  } catch (error) {
+    res.status(500).json({ error: "Unable to load suggestions" });
   }
 };

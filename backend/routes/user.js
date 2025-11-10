@@ -5,6 +5,7 @@ import {
   deleteUser,
   getUserByUsername,
   updateTopics,
+  getSuggestedUsers,
 } from "../controllers/userController.js";
 import {
   followUser,
@@ -26,6 +27,7 @@ router.get("/me/follow-stats", authenticate, getMyFollowStats);
 router.put("/update", authenticate, updateUser);
 router.put("/me/topics", authenticate, updateTopics);
 router.delete("/delete", authenticate, deleteUser);
+router.get("/suggestions", optionalAuthenticate, getSuggestedUsers);
 
 router.post("/:username/follow", authenticate, followUser);
 router.delete("/:username/follow", authenticate, unfollowUser);

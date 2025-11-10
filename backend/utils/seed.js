@@ -3,6 +3,8 @@ import path from "path";
 import { fileURLToPath } from "url";
 import Post from "../models/Post.js";
 import User from "../models/User.js";
+import UserSettings from "../models/Settings.js";
+import { buildDefaultSettingsPayload } from "./settingsUtils.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -113,11 +115,69 @@ const seedPosts = async () => {
   }
 };
 
+const provisionUserSettings = async () => {
+  const userCount = await User.estimatedDocumentCount();
+  if (!userCount) {
+    return false;
+  }
+
+  const existingSettings = await UserSettings.find({})
+    .select("user")
+    .lean();
+
+  const configuredUserIds = new Set(
+    existingSettings.map((doc) => doc.user?.toString()).filter(Boolean)
+  );
+
+  const missingUsers = await User.find({
+    _id: { $nin: Array.from(configuredUserIds) },
+  })
+    .select("_id email username name membershipStatus")
+    .lean();
+
+  if (!missingUsers.length) {
+    return false;
+  }
+
+  let created = 0;
+
+  for (const user of missingUsers) {
+    const payload = buildDefaultSettingsPayload(user);
+    if (!payload.email || !payload.username) {
+      console.warn(
+        `Skipping settings provision for user ${user._id}: missing email or username`
+      );
+      continue;
+    }
+
+    try {
+      await UserSettings.create(payload);
+      created += 1;
+    } catch (error) {
+      console.error(
+        `Failed to create settings for user ${user._id}:`,
+        error.message || error
+      );
+    }
+  }
+
+  if (created > 0) {
+    console.log(`Provisioned default settings for ${created} user${created === 1 ? "" : "s"}.`);
+    return true;
+  }
+
+  return false;
+};
+
 export const initializeSeedData = async () => {
   if (!seedExecution) {
-    seedExecution = seedPosts()
+    seedExecution = (async () => {
+      const settingsProvisioned = await provisionUserSettings();
+      const postsSeeded = await seedPosts();
+      return settingsProvisioned || postsSeeded;
+    })()
       .catch((error) => {
-        console.error("Post seeding terminated with error:", error);
+        console.error("Seeding tasks terminated with error:", error);
         return false;
       })
       .finally(() => {

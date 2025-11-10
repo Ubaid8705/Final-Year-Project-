@@ -9,6 +9,7 @@ import LandingPage from './pages/landingpage';
 import Profile from './pages/profile';
 import OAuthCallback from './pages/oauth-callback';
 import Notifications from './pages/notifications';
+import ResetPassword from './pages/reset-password';
 
 // Protected Route wrapper component (uses auth context)
 export function ProtectedRoute({ children }) {
@@ -43,6 +44,7 @@ export function ProtectedRoute({ children }) {
 // Export routes as array for App.js mapping
 export const routes = [
   { path: '/login', element: <Login /> },
+  { path: '/reset-password', element: <ResetPassword /> },
   { path: '/auth/callback', element: <OAuthCallback /> },
   { path: '/', element: (
       <ProtectedRoute>
@@ -57,6 +59,12 @@ export const routes = [
     )
   },
   { path: '/profile', element: (
+      <ProtectedRoute>
+        <Profile />
+      </ProtectedRoute>
+    )
+  },
+  { path: '/u/:username', element: (
       <ProtectedRoute>
         <Profile />
       </ProtectedRoute>

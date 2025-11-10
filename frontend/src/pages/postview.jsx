@@ -1,407 +1,719 @@
-import React, { useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { Link, useParams } from "react-router-dom";
 import "./postview.css";
-import { Provider } from "@lyket/react";
+import { API_BASE_URL } from "../config";
+import { useAuth } from "../contexts/AuthContext";
 
-function CustomClapButton({ id, namespace }) {
-  const [isClapped, setIsClapped] = useState(false);
-  const [clapCount, setClapCount] = useState(0);
+const FALLBACK_AVATAR =
+	"https://api.dicebear.com/7.x/initials/svg?seed=Reader";
 
-  const handleClick = () => {
-    if (isClapped) {
-      setClapCount((prev) => Math.max(prev - 1, 0));
-      setIsClapped(false);
-    } else {
-      setClapCount((prev) => prev + 1);
-      setIsClapped(true);
-    }
-  };
+const formatDate = (value) => {
+	if (!value) return null;
+	const date = new Date(value);
+	if (Number.isNaN(date.getTime())) {
+		return null;
+	}
 
-  return (
-    <div className="custom-clap-wrapper" onClick={handleClick}>
-      <Provider apiKey="acc0dbccce8e557db5ebbe6d605aaa">
-        <button
-          className={`post-meta-btn clap-button ${isClapped ? "clapped" : ""}`}
-        >
-          👏 {clapCount}
-        </button>
-      </Provider>
-    </div>
-  );
-}
-
-function PostMeta({ author }) {
-  if (!author) return null;
-  return (
-    <div className="post-meta">
-      <div className="post-meta-left">
-        <img
-          src={author.avatar}
-          alt={author.name}
-          className="post-author-avatar"
-        />
-        <div className="post-author-info">
-          <div className="post-author-row">
-            <span className="post-author-name">{author.name}</span>
-            <button className="post-follow-btn">Following ▾</button>
-          </div>
-          <div className="post-author-meta">
-            <span>{author.readTime}</span>
-            <span className="separator">•</span>
-            <span>{author.date}</span>
-          </div>
-        </div>
-      </div>
-
-      <div className="post-meta-right">
-        <div className="post-meta-actions">
-          <CustomClapButton namespace="my-blog-post" id={`post-${author.id}`} />
-          <button className="post-meta-btn">💬 {author.comments}</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-// ...existing code...
-
-function applyMarkups(text, markups = []) {
-  if (!markups?.length) return text;
-
-  const sorted = [...markups].sort((a, b) => a.start - b.start);
-  const elements = [];
-  let lastIndex = 0;
-
-  sorted.forEach((markup, idx) => {
-    if (markup.start > lastIndex)
-      elements.push(text.slice(lastIndex, markup.start));
-
-    const markedText = text.slice(markup.start, markup.end);
-
-    let el = null;
-    switch (markup.type) {
-      case "bold":
-        el = <strong key={idx}>{markedText}</strong>;
-        break;
-      case "italic":
-        el = <em key={idx}>{markedText}</em>;
-        break;
-      case "underline":
-        el = <u key={idx}>{markedText}</u>;
-        break;
-      case "highlight":
-        el = <mark key={idx}>{markedText}</mark>;
-        break;
-      case "code":
-        el = <code key={idx}>{markedText}</code>;
-        break;
-      case "link":
-        el = (
-          <a
-            key={idx}
-            href={markup.href}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-blue-600 underline"
-          >
-            {markedText}
-          </a>
-        );
-        break;
-      default:
-        el = markedText;
-    }
-
-    elements.push(el);
-    lastIndex = markup.end;
-  });
-
-  if (lastIndex < text.length) {
-    elements.push(text.slice(lastIndex));
-  }
-
-  return elements;
-}
-
-function renderBlock(block, idx) {
-  if (!block) return null;
-  const key = block.id || idx;
-
-  switch (block.type) {
-    case "P":
-      return (
-        <p key={key} className="post-paragraph">
-          {applyMarkups(block.text, block.markups)}
-        </p>
-      );
-
-    case "H1":
-      return (
-        <h1 key={key} className="post-heading-1">
-          {block.text}
-        </h1>
-      );
-
-    case "H2":
-      return (
-        <h2 key={key} className="post-heading-2">
-          {block.text}
-        </h2>
-      );
-
-    case "UL":
-      return (
-        <ul key={key} className="post-list">
-          {block.items.map((item, i) => (
-            <li key={i}>{applyMarkups(item.text, item.markups)}</li>
-          ))}
-        </ul>
-      );
-
-    case "OL":
-      return (
-        <ol key={key} className="post-list ordered">
-          {block.items.map((item, i) => (
-            <li key={i}>{applyMarkups(item.text, item.markups)}</li>
-          ))}
-        </ol>
-      );
-
-    case "DIVIDER":
-      return <hr key={key} className="post-divider" />;
-
-    case "IMG":
-      {
-        const image = block.image || {};
-        const source =
-          image.displayUrl ||
-          image.url ||
-          image.originalUrl ||
-          image.secureUrl;
-
-        if (!source) {
-          return null;
-        }
-
-        const width = Number(image.width) || null;
-        const height = Number(image.height) || null;
-        const aspectRatioValue =
-          width && height
-            ? `${width} / ${height}`
-            : typeof image.aspectRatio === "number" && image.aspectRatio > 0
-            ? image.aspectRatio
-            : undefined;
-
-        const boundedWidth = width ? Math.min(width, 960) : 960;
-        const maxHeight = height ? Math.min(height, 620) : 620;
-
-        return (
-          <figure
-            key={key}
-            className="post-image-container"
-            style={{
-              width: `min(100%, ${boundedWidth}px)`,
-              maxWidth: `min(100%, ${boundedWidth}px)`,
-              aspectRatio: aspectRatioValue,
-            }}
-          >
-            <img
-              src={source}
-              alt={image.alt || ""}
-              className="post-image"
-              loading="lazy"
-              width={width || undefined}
-              height={height || undefined}
-              style={{
-                maxHeight: `${maxHeight}px`,
-              }}
-            />
-            {image.caption && (
-              <figcaption className="post-image-caption">
-                {image.caption}
-              </figcaption>
-            )}
-          </figure>
-        );
-      }
-
-    case "VIDEO":
-      return (
-        <div key={key} className="post-video">
-          <video
-            controls
-            width={block.video?.width || "100%"}
-            poster={block.video?.thumbnail}
-          >
-            <source src={block.video?.url} type="video/mp4" />
-            Your browser does not support the video tag.
-          </video>
-          {block.video?.title && (
-            <p className="post-video-title">{block.video.title}</p>
-          )}
-        </div>
-      );
-
-    case "CODE":
-      return (
-        <pre key={key} className="post-code-block">
-          <code>{block.codeBlock}</code>
-        </pre>
-      );
-
-    case "BLOCKQUOTE":
-    case "blockquote":
-      return (
-        <blockquote key={key} className="post-blockquote">
-          {applyMarkups(block.text, block.markups)}
-        </blockquote>
-      );
-
-    default:
-      return null;
-  }
-}
-
-const samplePost = {
-  title: "Building a Dynamic Blog System Like Medium",
-  subtitle:
-    "Implementing inline markups, media embeds, and structured content blocks",
-  coverImage:
-    "https://images.unsplash.com/photo-1522202176988-66273c2fd55f?w=1200",
-  content: [
-    {
-      id: 1,
-      type: "H1",
-      text: "Introduction",
-    },
-    {
-      id: 2,
-      type: "P",
-      text: "In this guide, we’ll show you how to create a full-featured blog system using React and Node.js — with inline markups like bold, italic, highlight, and links.",
-      markups: [
-        { type: "bold", start: 46, end: 66 },
-        { type: "italic", start: 68, end: 73 },
-        { type: "highlight", start: 75, end: 84 },
-        { type: "link", start: 90, end: 100, href: "https://react.dev" },
-      ],
-    },
-    {
-      id: 3,
-      type: "DIVIDER",
-    },
-    {
-      id: 4,
-      type: "H2",
-      text: "Core Features",
-    },
-    {
-      id: 5,
-      type: "UL",
-      items: [
-        {
-          text: "Inline markups with start/end positions",
-          markups: [{ type: "bold", start: 0, end: 6 }],
-        },
-        { text: "Video and image embeds" },
-        { text: "Ordered and unordered lists" },
-      ],
-    },
-    {
-      id: 6,
-      type: "IMG",
-      image: {
-        url: "https://images.unsplash.com/photo-1498050108023-c5249f4df085?w=900",
-        alt: "Blog editor screenshot",
-        caption: "A blog editor supporting markups and media",
-      },
-    },
-    {
-      id: 7,
-      type: "VIDEO",
-      video: {
-        url: "https://www.w3schools.com/html/mov_bbb.mp4",
-        title: "Demo: Blog post rendering system",
-        thumbnail:
-          "https://images.unsplash.com/photo-1556157382-97eda2d62296?w=800",
-      },
-    },
-    {
-      id: 8,
-      type: "OL",
-      items: [
-        { text: "Initialize project and install dependencies" },
-        { text: "Add editor for writing posts" },
-        { text: "Save blocks with markups in MongoDB" },
-      ],
-    },
-    {
-      id: 9,
-      type: "CODE",
-      codeBlock: `npm create vite@latest blog-app
-cd blog-app
-npm install
-npm run dev`,
-    },
-    {
-      id: 10,
-      type: "P",
-      text: "With these tools, your blog can handle rich text and structured content seamlessly.",
-    },
-    {
-      id: 11,
-      type: "BLOCKQUOTE",
-      text: "“Happy blogging! Build, write, and share your knowledge.”",
-      markups: [{ type: "italic", start: 1, end: 15 }],
-    },
-  ],
+	return date.toLocaleDateString(undefined, {
+		month: "long",
+		day: "numeric",
+		year: "numeric",
+	});
 };
 
-const sampleAuthor = {
-  name: "Richard Anton",
-  avatar: "https://randomuser.me/api/portraits/men/32.jpg",
-  readTime: "21 min read",
-  date: "3 days ago",
-  claps: 25,
-  comments: 1,
+const formatRelativeTime = (value) => {
+	if (!value) return "";
+	const target = new Date(value);
+	if (Number.isNaN(target.getTime())) {
+		return "";
+	}
+
+	const diff = Date.now() - target.getTime();
+	const minute = 60 * 1000;
+	const hour = 60 * minute;
+	const day = 24 * hour;
+	const month = 30 * day;
+	const year = 365 * day;
+
+	if (diff < minute) return "just now";
+	if (diff < hour) {
+		const count = Math.floor(diff / minute);
+		return `${count} minute${count === 1 ? "" : "s"} ago`;
+	}
+	if (diff < day) {
+		const count = Math.floor(diff / hour);
+		return `${count} hour${count === 1 ? "" : "s"} ago`;
+	}
+	if (diff < month) {
+		const count = Math.floor(diff / day);
+		return `${count} day${count === 1 ? "" : "s"} ago`;
+	}
+	if (diff < year) {
+		const count = Math.floor(diff / month);
+		return `${count} month${count === 1 ? "" : "s"} ago`;
+	}
+	const count = Math.floor(diff / year);
+	return `${count} year${count === 1 ? "" : "s"} ago`;
 };
 
-export default function PostView({ post = samplePost }) {
-  if (!post) return <div className="post-loading">Loading...</div>;
+const resolveAvatar = (author) => {
+	if (!author) return FALLBACK_AVATAR;
+	const candidate = [author.avatar, author.photo, author.picture].find(
+		(value) => typeof value === "string" && value.trim().length > 0
+	);
+	if (candidate) {
+		return candidate;
+	}
+	const seed = author.name || author.username || "Reader";
+	return `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(
+		seed
+	)}`;
+};
 
-  const coverMeta = post.coverImageMeta || {};
-  const coverImageSrc =
-    coverMeta.displayUrl ||
-    coverMeta.secureUrl ||
-    coverMeta.originalUrl ||
-    post.coverImage;
+const applyMarkups = (text = "", markups = []) => {
+	if (!text || !Array.isArray(markups) || markups.length === 0) {
+		return text;
+	}
 
-  return (
-    <article className="post-container">
-      <header className="post-header">
-        <h1 className="post-title">{post.title}</h1>
-        {post.subtitle && <h2 className="post-subtitle">{post.subtitle}</h2>}
+	const sorted = [...markups].sort((a, b) => {
+		const startA = typeof a.start === "number" ? a.start : 0;
+		const startB = typeof b.start === "number" ? b.start : 0;
+		return startA - startB;
+	});
 
-        {/* 👇 Author Metadata Section */}
-        <PostMeta author={sampleAuthor} />
+	const fragments = [];
+	let cursor = 0;
 
-        {coverImageSrc && (
-          <div className="post-cover-image">
-            <img
-              src={coverImageSrc}
-              alt={coverMeta.alt || post.title || "cover"}
-              loading="lazy"
-              width={coverMeta.width || undefined}
-              height={coverMeta.height || undefined}
-              style={{
-                maxHeight: coverMeta.height ? `${Math.min(coverMeta.height, 620)}px` : undefined,
-              }}
-            />
-          </div>
-        )}
-      </header>
+	sorted.forEach((markup, index) => {
+		const start = Math.max(0, Number(markup.start) || 0);
+		const end = Math.min(text.length, Number(markup.end) || text.length);
 
-      <div className="post-content">
-        {Array.isArray(post.content) &&
-          post.content.map((block, idx) => renderBlock(block, idx))}
-      </div>
-    </article>
-  );
+		if (start > cursor) {
+			fragments.push(text.slice(cursor, start));
+		}
+
+		const innerText = text.slice(start, end);
+		const key = `${start}-${end}-${index}`;
+		const type = (markup.type || "").toString().toUpperCase();
+
+		let element = innerText;
+
+		switch (type) {
+			case "BOLD":
+				element = <strong key={key}>{innerText}</strong>;
+				break;
+			case "ITALIC":
+				element = <em key={key}>{innerText}</em>;
+				break;
+			case "UNDERLINE":
+				element = <u key={key}>{innerText}</u>;
+				break;
+			case "HIGHLIGHT":
+				element = <mark key={key}>{innerText}</mark>;
+				break;
+			case "CODE":
+				element = <code key={key}>{innerText}</code>;
+				break;
+			case "LINK":
+				element = (
+					<a
+						key={key}
+						href={markup.href || markup.url || "#"}
+						target="_blank"
+						rel="noopener noreferrer"
+						className="post-inline-link"
+					>
+						{innerText}
+					</a>
+				);
+				break;
+			default:
+				element = innerText;
+		}
+
+		fragments.push(element);
+		cursor = end;
+	});
+
+	if (cursor < text.length) {
+		fragments.push(text.slice(cursor));
+	}
+
+	return fragments;
+};
+
+const renderListItems = (items = []) => {
+	if (!Array.isArray(items) || items.length === 0) {
+		return null;
+	}
+
+	return items.map((item, index) => (
+		<li key={item?.id || index}>{applyMarkups(item?.text || "", item?.markups)}</li>
+	));
+};
+
+const renderBlock = (block, index) => {
+	if (!block) return null;
+	const key = block.id || `${block.type}-${index}`;
+	const type = (block.type || "").toString().toUpperCase();
+
+	switch (type) {
+		case "P":
+			return (
+				<p key={key} className="post-paragraph">
+					{applyMarkups(block.text || "", block.markups)}
+				</p>
+			);
+
+		case "H1":
+			return (
+				<h1 key={key} className="post-heading-1">
+					{block.text}
+				</h1>
+			);
+
+		case "H2":
+			return (
+				<h2 key={key} className="post-heading-2">
+					{block.text}
+				</h2>
+			);
+
+		case "H3":
+			return (
+				<h3 key={key} className="post-heading-3">
+					{block.text}
+				</h3>
+			);
+
+		case "BLOCKQUOTE":
+		case "BQ":
+			return (
+				<blockquote key={key} className="post-blockquote">
+					{applyMarkups(block.text || "", block.markups)}
+				</blockquote>
+			);
+
+		case "UL":
+			return (
+				<ul key={key} className="post-list">
+					{renderListItems(block.items || block.children)}
+				</ul>
+			);
+
+		case "OL":
+			return (
+				<ol key={key} className="post-list ordered">
+					{renderListItems(block.items || block.children)}
+				</ol>
+			);
+
+		case "DIVIDER":
+			return <hr key={key} className="post-divider" />;
+
+		case "CODE":
+			return (
+				<pre key={key} className="post-code-block">
+					<code>{block.codeBlock || block.text}</code>
+				</pre>
+			);
+
+		case "IMG": {
+			const image = block.image || {};
+			const source =
+				image.displayUrl ||
+				image.url ||
+				image.originalUrl ||
+				image.secureUrl ||
+				image.thumbnailUrl;
+
+			if (!source) {
+				return null;
+			}
+
+			const width = Number(image.width) || undefined;
+			const height = Number(image.height) || undefined;
+
+			return (
+				<figure key={key} className="post-image-container">
+					<img
+						src={source}
+						alt={image.alt || ""}
+						className="post-image"
+						loading="lazy"
+						width={width}
+						height={height}
+					/>
+					{image.caption && (
+						<figcaption className="post-image-caption">
+							{image.caption}
+						</figcaption>
+					)}
+				</figure>
+			);
+		}
+
+		case "VIDEO": {
+			const video = block.video || {};
+			const url = video.url || video.embedUrl;
+			if (!url) {
+				return null;
+			}
+
+			const platform = (video.platform || "").toString().toUpperCase();
+			if (platform === "YOUTUBE" || /youtube\.com|youtu\.be/.test(url)) {
+				const embedUrl = url.includes("embed")
+					? url
+					: url.replace("watch?v=", "embed/");
+				return (
+					<div key={key} className="post-video">
+						<iframe
+							src={embedUrl}
+							title={video.caption || "Embedded video"}
+							allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+							allowFullScreen
+						/>
+						{video.caption && (
+							<p className="post-video-title">{video.caption}</p>
+						)}
+					</div>
+				);
+			}
+
+			return (
+				<div key={key} className="post-video">
+					<video
+						controls
+						width={video.width || "100%"}
+						height={video.height || undefined}
+						poster={video.thumbnail}
+					>
+						<source src={url} />
+						Your browser does not support embedded video.
+					</video>
+					{video.caption && (
+						<p className="post-video-title">{video.caption}</p>
+					)}
+				</div>
+			);
+		}
+
+		default:
+			return null;
+	}
+};
+
+const CommentItem = ({ comment }) => {
+	const author = comment?.author;
+	const replies = Array.isArray(comment?.replies) ? comment.replies : [];
+
+	return (
+		<li className="comment-item" key={comment?.id}>
+			<div className="comment-header">
+				<img
+					src={resolveAvatar(author)}
+					alt={author?.name || author?.username || "Reader"}
+					className="comment-avatar"
+				/>
+				<div className="comment-author">
+					<span className="comment-author-name">
+						{author?.name || author?.username || "Reader"}
+					</span>
+					<span className="comment-timestamp">
+						{formatRelativeTime(comment?.createdAt)}
+					</span>
+				</div>
+			</div>
+
+			{comment?.content && (
+				<p className="comment-body">{comment.content}</p>
+			)}
+
+			{replies.length > 0 && (
+				<ul className="comment-replies">
+					{replies.map((reply) => (
+						<CommentItem key={reply?.id} comment={reply} />
+					))}
+				</ul>
+			)}
+		</li>
+	);
+};
+
+const CommentComposer = ({
+	canRespond,
+	content,
+	disabled,
+	error,
+	onChange,
+	onSubmit,
+}) => {
+	if (!canRespond) {
+		return (
+			<div className="comment-disabled">Responses are turned off for this story.</div>
+		);
+	}
+
+	return (
+		<form className="comment-composer" onSubmit={onSubmit}>
+			<textarea
+				placeholder="Share your thoughts"
+				value={content}
+				onChange={(event) => onChange(event.target.value)}
+				disabled={disabled}
+				rows={4}
+			/>
+			{error && <div className="comment-error">{error}</div>}
+			<div className="comment-actions">
+				<button
+					type="submit"
+					className="comment-submit"
+					disabled={disabled || !content.trim()}
+				>
+					Publish response
+				</button>
+			</div>
+		</form>
+	);
+};
+
+const PostMeta = ({
+	author,
+	publishedAt,
+	readingTime,
+	clapCount,
+	responseCount,
+	isAuthenticated,
+	onClap,
+	clapping,
+}) => {
+	const dateLabel = formatDate(publishedAt);
+	const minutes = readingTime ? Math.max(1, Math.round(readingTime)) : null;
+	const readLabel = minutes ? `${minutes} min read` : null;
+	const authorName = author?.name || author?.username || "Unknown";
+
+	return (
+		<div className="post-meta">
+			<div className="post-meta-left">
+				<img
+					src={resolveAvatar(author)}
+					alt={authorName}
+					className="post-author-avatar"
+				/>
+				<div className="post-author-info">
+					<div className="post-author-row">
+						<span className="post-author-name">{authorName}</span>
+						<Link className="post-author-profile" to="/profile">
+							View profile
+						</Link>
+					</div>
+					<div className="post-author-meta">
+						{readLabel && <span>{readLabel}</span>}
+						{readLabel && dateLabel && <span className="separator">•</span>}
+						{dateLabel && <span>{dateLabel}</span>}
+					</div>
+				</div>
+			</div>
+
+			<div className="post-meta-right">
+				<button
+					type="button"
+					className="post-meta-btn"
+					onClick={onClap}
+					disabled={!isAuthenticated || clapping}
+					title={
+						isAuthenticated
+							? "Clap for this story"
+							: "Sign in to clap for stories"
+					}
+				>
+					👏 {clapCount ?? 0}
+				</button>
+				<span className="post-meta-response-count">
+					💬 {responseCount ?? 0}
+				</span>
+			</div>
+		</div>
+	);
+};
+
+const PostTags = ({ tags }) => {
+	if (!Array.isArray(tags) || tags.length === 0) {
+		return null;
+	}
+
+	return (
+		<ul className="post-tags">
+			{tags.map((tag) => (
+				<li key={tag}>{tag}</li>
+			))}
+		</ul>
+	);
+};
+
+export default function PostView() {
+	const { id } = useParams();
+	const { token, user } = useAuth();
+
+	const [post, setPost] = useState(null);
+	const [loading, setLoading] = useState(true);
+	const [error, setError] = useState(null);
+
+	const [clapCount, setClapCount] = useState(0);
+	const [clapping, setClapping] = useState(false);
+
+	const [comments, setComments] = useState([]);
+	const [commentsLoading, setCommentsLoading] = useState(false);
+	const [commentContent, setCommentContent] = useState("");
+	const [commentError, setCommentError] = useState(null);
+	const [commentSubmitting, setCommentSubmitting] = useState(false);
+
+	const isAuthenticated = Boolean(token && user);
+
+	const coverImageSrc = useMemo(() => {
+		if (!post) return null;
+		const meta = post.coverImageMeta || {};
+		return (
+			meta.displayUrl ||
+			meta.secureUrl ||
+			meta.originalUrl ||
+			post.coverImage ||
+			null
+		);
+	}, [post]);
+
+	const fetchPost = useCallback(async () => {
+		if (!id) {
+			setError("Missing post identifier");
+			setLoading(false);
+			return;
+		}
+
+		setLoading(true);
+		setError(null);
+
+		try {
+			const response = await fetch(`${API_BASE_URL}/api/posts/${id}`);
+			if (!response.ok) {
+				throw new Error("Unable to load story");
+			}
+
+			const payload = await response.json();
+			setPost(payload);
+			setClapCount(payload?.clapCount ?? 0);
+		} catch (fetchError) {
+			setError(fetchError.message || "Failed to load story");
+		} finally {
+			setLoading(false);
+		}
+	}, [id]);
+
+	const fetchComments = useCallback(async () => {
+		if (!post?.id) {
+			return;
+		}
+
+		setCommentsLoading(true);
+		try {
+			const response = await fetch(
+				`${API_BASE_URL}/api/comments?postId=${post.id}`
+			);
+
+			if (!response.ok) {
+				throw new Error("Unable to load responses");
+			}
+
+			const payload = await response.json();
+			setComments(Array.isArray(payload?.items) ? payload.items : []);
+		} catch (commentError) {
+			console.warn(commentError);
+		} finally {
+			setCommentsLoading(false);
+		}
+	}, [post?.id]);
+
+	useEffect(() => {
+		fetchPost();
+	}, [fetchPost]);
+
+	useEffect(() => {
+		fetchComments();
+	}, [fetchComments]);
+
+	const handleClap = useCallback(async () => {
+		if (!isAuthenticated) {
+			return;
+		}
+
+		if (!post || clapping) {
+			return;
+		}
+
+		setClapping(true);
+		setError(null);
+
+		const identifier = post.slug || post.id || id;
+
+		try {
+			const response = await fetch(
+				`${API_BASE_URL}/api/posts/${identifier}/clap`,
+				{
+					method: "POST",
+					headers: {
+						Authorization: `Bearer ${token}`,
+						"Content-Type": "application/json",
+					},
+				}
+			);
+
+			if (!response.ok) {
+				throw new Error("Unable to clap right now");
+			}
+
+			const payload = await response.json();
+			setClapCount(payload?.clapCount ?? clapCount + 1);
+		} catch (clapError) {
+			setError(clapError.message || "Failed to clap story");
+		} finally {
+			setClapping(false);
+		}
+	}, [clapping, clapCount, id, isAuthenticated, post, token]);
+
+	const handleSubmitComment = useCallback(
+		async (event) => {
+			event.preventDefault();
+
+			if (!isAuthenticated) {
+				setCommentError("Sign in to publish a response");
+				return;
+			}
+
+			if (!post?.id) {
+				setCommentError("Missing post reference");
+				return;
+			}
+
+			if (!commentContent.trim()) {
+				setCommentError("Write something before publishing");
+				return;
+			}
+
+			setCommentError(null);
+			setCommentSubmitting(true);
+
+			try {
+				const response = await fetch(`${API_BASE_URL}/api/comments`, {
+					method: "POST",
+					headers: {
+						Authorization: `Bearer ${token}`,
+						"Content-Type": "application/json",
+					},
+					body: JSON.stringify({
+						postId: post.id,
+						content: commentContent.trim(),
+					}),
+				});
+
+				if (!response.ok) {
+					const payload = await response.json().catch(() => ({}));
+					throw new Error(payload?.error || "Unable to publish response");
+				}
+
+				setCommentContent("");
+				setPost((previous) =>
+					previous
+						? { ...previous, responseCount: (previous.responseCount || 0) + 1 }
+						: previous
+				);
+				await fetchComments();
+			} catch (submitError) {
+				setCommentError(submitError.message || "Failed to publish response");
+			} finally {
+				setCommentSubmitting(false);
+			}
+		},
+		[commentContent, fetchComments, isAuthenticated, post, token]
+	);
+
+	if (loading) {
+		return <div className="post-loading">Loading story…</div>;
+	}
+
+	if (error && !post) {
+		return <div className="post-error">{error}</div>;
+	}
+
+	if (!post) {
+		return <div className="post-error">Story not found</div>;
+	}
+
+	return (
+		<article className="post-container">
+			{error && <div className="post-inline-error">{error}</div>}
+
+			<header className="post-header">
+				<h1 className="post-title">{post.title}</h1>
+				{post.subtitle && <h2 className="post-subtitle">{post.subtitle}</h2>}
+
+				<PostMeta
+					author={post.author}
+					publishedAt={post.publishedAt || post.createdAt}
+					readingTime={post.readingTime}
+					clapCount={clapCount}
+					responseCount={post.responseCount}
+					isAuthenticated={isAuthenticated}
+					onClap={handleClap}
+					clapping={clapping}
+				/>
+
+				{coverImageSrc && (
+					<div className="post-cover-image">
+						<img
+							src={coverImageSrc}
+							alt={post.coverImageMeta?.alt || post.title || "Story cover"}
+							loading="lazy"
+						/>
+					</div>
+				)}
+			</header>
+
+			<div className="post-content">
+				{Array.isArray(post.content) &&
+					post.content.map((block, index) => renderBlock(block, index))}
+			</div>
+
+			<PostTags tags={post.tags} />
+
+			<section className="post-comments">
+				<h3>
+					Responses <span>({post.responseCount ?? comments.length})</span>
+				</h3>
+
+				<CommentComposer
+					canRespond={post.allowResponses !== false}
+					content={commentContent}
+					disabled={commentSubmitting}
+					error={commentError}
+					onChange={setCommentContent}
+					onSubmit={handleSubmitComment}
+				/>
+
+				{commentsLoading && (
+					<div className="post-loading">Loading responses…</div>
+				)}
+
+				{!commentsLoading && comments.length === 0 && (
+					<div className="comment-empty">Be the first to respond.</div>
+				)}
+
+				{!commentsLoading && comments.length > 0 && (
+					<ul className="comment-thread">
+						{comments.map((comment) => (
+							<CommentItem key={comment?.id} comment={comment} />
+						))}
+					</ul>
+				)}
+			</section>
+		</article>
+	);
 }

@@ -15,11 +15,12 @@ const INITIAL_FORM = {
 const createEmptyForm = () => ({ ...INITIAL_FORM });
 
 const Login = () => {
-  const [view, setView] = useState("welcome"); // welcome, signup, email-signin, email-signup
+  const [view, setView] = useState("welcome"); // welcome, signup, email-signin, email-signup, verify-email, forgot-password
   const [formData, setFormData] = useState(createEmptyForm);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [otpCode, setOtpCode] = useState("");
   const navigate = useNavigate();
   const { user, loading, login, signup } = useAuth();
 
@@ -38,6 +39,7 @@ const Login = () => {
     setError("");
     setNotice("");
     setSubmitting(false);
+    setOtpCode("");
 
     setFormData((current) => {
       if (nextView === "email-signin") {
@@ -48,6 +50,13 @@ const Login = () => {
       }
 
       if (nextView === "email-signup") {
+        return {
+          ...createEmptyForm(),
+          email: current.email,
+        };
+      }
+
+      if (nextView === "verify-email" || nextView === "forgot-password") {
         return {
           ...createEmptyForm(),
           email: current.email,
@@ -109,9 +118,84 @@ const Login = () => {
         }
 
         const message = result?.message || "Check your email for the verification code.";
-        updateView("email-signin");
         setNotice(message);
+        updateView("verify-email");
       }
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleVerifySubmit = async (event) => {
+    event.preventDefault();
+    setError("");
+    setNotice("");
+
+    if (submitting) {
+      return;
+    }
+
+    if (!formData.email.trim() || !otpCode.trim()) {
+      setError("Enter the email and verification code");
+      return;
+    }
+
+    setSubmitting(true);
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/auth/verify-email`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: formData.email.trim(), otp: otpCode.trim() }),
+      });
+
+      const payload = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(payload?.error || "Unable to verify email");
+      }
+
+      setNotice(payload?.message || "Email verified successfully. You can sign in now.");
+      updateView("email-signin");
+    } catch (verifyError) {
+      setError(verifyError.message || "Unable to verify email");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleForgotSubmit = async (event) => {
+    event.preventDefault();
+    setError("");
+    setNotice("");
+
+    if (submitting) {
+      return;
+    }
+
+    if (!formData.email.trim()) {
+      setError("Enter the email associated with your account");
+      return;
+    }
+
+    setSubmitting(true);
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/auth/forgot-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: formData.email.trim() }),
+      });
+
+      const payload = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(payload?.error || "Unable to send reset email");
+      }
+
+      setNotice(payload?.message || "Check your email for the reset link.");
+    } catch (forgotError) {
+      setError(forgotError.message || "Unable to send reset email");
     } finally {
       setSubmitting(false);
     }
@@ -187,6 +271,15 @@ const Login = () => {
             : view === "email-signup" ? "Create account" : "Continue"}
         </button>
       </form>
+      {view === "email-signin" && (
+        <button
+          type="button"
+          className="link"
+          onClick={() => updateView("forgot-password")}
+        >
+          Forgot your password?
+        </button>
+      )}
       <button
         className="back-button"
         onClick={() => updateView(view.includes("signup") ? "signup" : "welcome")}
@@ -256,12 +349,92 @@ const Login = () => {
     </div>
   );
 
+  const renderVerifyForm = () => (
+    <div className="auth-container">
+      <div className="auth-header">
+        <div className="auth-icon">✅</div>
+        <h1>Verify your email</h1>
+        <p className="auth-subheading">
+          Enter the six-digit code we sent to <strong>{formData.email || "your email"}</strong>.
+        </p>
+      </div>
+      <form onSubmit={handleVerifySubmit}>
+        <label>Email</label>
+        <input
+          type="email"
+          value={formData.email}
+          onChange={handleChange("email")}
+          placeholder="Enter your email"
+          autoComplete="email"
+          required
+        />
+        <label>Verification code</label>
+        <input
+          type="text"
+          value={otpCode}
+          onChange={(event) => setOtpCode(event.target.value)}
+          placeholder="123456"
+          maxLength={6}
+          inputMode="numeric"
+          required
+        />
+        {error && <div className="status-message error">{error}</div>}
+        {notice && <div className="status-message success">{notice}</div>}
+        <button type="submit" className="submit-btn" disabled={submitting}>
+          {submitting ? "Verifying..." : "Verify email"}
+        </button>
+      </form>
+      <button className="back-button" onClick={() => updateView("email-signin")}>Back to sign in</button>
+      <p className="auth-help">
+        Didn’t receive the email? Check your spam folder or&nbsp;
+        <button
+          type="button"
+          className="link"
+          onClick={() => updateView("email-signup")}
+        >
+          restart sign up
+        </button>.
+      </p>
+    </div>
+  );
+
+  const renderForgotForm = () => (
+    <div className="auth-container">
+      <div className="auth-header">
+        <div className="auth-icon">🔐</div>
+        <h1>Reset your password</h1>
+        <p className="auth-subheading">
+          Enter the email associated with your account and we’ll send a reset link.
+        </p>
+      </div>
+      <form onSubmit={handleForgotSubmit}>
+        <label>Email</label>
+        <input
+          type="email"
+          value={formData.email}
+          onChange={handleChange("email")}
+          placeholder="you@example.com"
+          autoComplete="email"
+          required
+        />
+        {error && <div className="status-message error">{error}</div>}
+        {notice && <div className="status-message success">{notice}</div>}
+        <button type="submit" className="submit-btn" disabled={submitting}>
+          {submitting ? "Sending..." : "Email reset link"}
+        </button>
+      </form>
+      <button className="back-button" onClick={() => updateView("email-signin")}>Back to sign in</button>
+    </div>
+  );
+
   return (
     <div className="page-container">
       {view === "welcome" && renderWelcomeScreen()}
       {view === "signup" && renderSignupScreen()}
-      {(view === "email-signin" || view === "email-signup") &&
+        {(view === "email-signin" || view === "email-signup") &&
         renderEmailForm(view === "email-signin" ? "Sign in with email" : "Sign up with email")}
+      {view === "verify-email" && renderVerifyForm()}
+      {view === "forgot-password" && renderForgotForm()}
     </div>
   );
 };
