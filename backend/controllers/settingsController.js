@@ -1,5 +1,5 @@
 import User from "../models/User.js";
-import UserSettings from "../models/Settings.js";
+import { ensureUserSettings } from "../utils/settingsUtils.js";
 
 const isPremiumMembership = (membershipValue, userDoc) => {
   const normalized = (membershipValue || "").toString().trim().toLowerCase();
@@ -30,28 +30,9 @@ const serializeSettings = (settings, userDoc) => ({
   createdAt: settings.createdAt,
 });
 
-const ensureSettingsDocument = async (user) => {
-  let settings = await UserSettings.findOne({ user: user._id });
-
-  if (!settings) {
-    settings = await UserSettings.create({
-      user: user._id,
-      email: user.email,
-      username: user.username,
-      displayName: user.name,
-      membership: user.membershipStatus ? "Premium" : "None",
-    });
-  } else if (!settings.membership && user.membershipStatus) {
-    settings.membership = "Premium";
-    await settings.save();
-  }
-
-  return settings;
-};
-
 export const getCurrentSettings = async (req, res) => {
   try {
-    const settings = await ensureSettingsDocument(req.user);
+    const settings = await ensureUserSettings(req.user);
     res.json(serializeSettings(settings, req.user));
   } catch (error) {
     res.status(500).json({ error: "Failed to load settings" });
@@ -81,7 +62,7 @@ export const updateSettings = async (req, res) => {
       return acc;
     }, {});
 
-    const settings = await ensureSettingsDocument(req.user);
+  const settings = await ensureUserSettings(req.user);
 
     Object.assign(settings, updates);
     await settings.save();

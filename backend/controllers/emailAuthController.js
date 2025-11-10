@@ -8,6 +8,7 @@ import {
   normalizeEmail,
 } from '../utils/userUtils.js';
 import { initializeSeedData } from '../utils/seed.js';
+import { ensureUserSettings } from '../utils/settingsUtils.js';
 
 // Register new user
 export const register = async (req, res) => {
@@ -59,6 +60,8 @@ export const register = async (req, res) => {
       topics: [],
       lastLogin: null,
     });
+
+  await ensureUserSettings(user).catch(() => {});
 
     // Send OTP to user's email
   await sendVerificationEmail(user.email, otp);
@@ -155,6 +158,7 @@ export const login = async (req, res) => {
         lastLogin: user.lastLogin,
         topics: Array.isArray(user.topics) ? user.topics : [],
         topicsUpdatedAt: user.topicsUpdatedAt || null,
+        membershipStatus: Boolean(user.membershipStatus),
       }
     });
   } catch (error) {

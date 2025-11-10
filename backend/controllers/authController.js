@@ -18,6 +18,7 @@ const buildOAuthRedirectUrl = (user) => {
     lastLogin: user.lastLogin,
     topics: Array.isArray(user.topics) ? user.topics : [],
     topicsUpdatedAt: user.topicsUpdatedAt || null,
+    membershipStatus: Boolean(user.membershipStatus),
   };
 
   const params = new URLSearchParams({

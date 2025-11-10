@@ -8,6 +8,7 @@ import {
   normalizeEmail,
 } from '../utils/userUtils.js';
 import { initializeSeedData } from '../utils/seed.js';
+import { ensureUserSettings } from '../utils/settingsUtils.js';
 
 export default function (passportInstance) {
   // serialize/deserialize (we won't use session except for handshake)
@@ -65,6 +66,7 @@ export default function (passportInstance) {
               });
 
               initializeSeedData().catch(() => {});
+              ensureUserSettings(user).catch(() => {});
             } else if (!user.providerId) {
               // link existing local user by email
               user.provider = "google";
@@ -81,6 +83,7 @@ export default function (passportInstance) {
               await user.save();
             }
 
+            await ensureUserSettings(user).catch(() => {});
             return done(null, user);
           } catch (err) {
             done(err);
@@ -141,6 +144,7 @@ export default function (passportInstance) {
               });
 
               initializeSeedData().catch(() => {});
+              ensureUserSettings(user).catch(() => {});
             } else if (!user.providerId) {
               user.provider = "facebook";
               user.providerId = profile.id;
@@ -161,6 +165,7 @@ export default function (passportInstance) {
               await user.save();
             }
 
+            await ensureUserSettings(user).catch(() => {});
             return done(null, user);
           } catch (err) {
             done(err);
