@@ -11,6 +11,7 @@ import settingsRoutes from './routes/settings.js';
 import savedRoutes from './routes/saved.js';
 import notificationsRoutes from './routes/notifications.js';
 import hiddenRoutes from './routes/hidden.js';
+import uploadsRoutes from './routes/uploads.js';
 
 const app = express();
 
@@ -51,6 +52,7 @@ app.use('/api/settings', settingsRoutes);
 app.use('/api/saved-posts', savedRoutes);
 app.use('/api/hidden-posts', hiddenRoutes);
 app.use('/api/notifications', notificationsRoutes);
+app.use('/api/uploads', uploadsRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {

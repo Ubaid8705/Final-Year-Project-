@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import "./postview.css";
-import { Provider, ClapButton } from "@lyket/react";
+import { Provider } from "@lyket/react";
 
 function CustomClapButton({ id, namespace }) {
   const [isClapped, setIsClapped] = useState(false);
@@ -169,20 +169,59 @@ function renderBlock(block, idx) {
       return <hr key={key} className="post-divider" />;
 
     case "IMG":
-      return (
-        <figure key={key} className="post-image-container">
-          <img
-            src={block.image?.url}
-            alt={block.image?.alt}
-            className="post-image"
-          />
-          {block.image?.caption && (
-            <figcaption className="post-image-caption">
-              {block.image.caption}
-            </figcaption>
-          )}
-        </figure>
-      );
+      {
+        const image = block.image || {};
+        const source =
+          image.displayUrl ||
+          image.url ||
+          image.originalUrl ||
+          image.secureUrl;
+
+        if (!source) {
+          return null;
+        }
+
+        const width = Number(image.width) || null;
+        const height = Number(image.height) || null;
+        const aspectRatioValue =
+          width && height
+            ? `${width} / ${height}`
+            : typeof image.aspectRatio === "number" && image.aspectRatio > 0
+            ? image.aspectRatio
+            : undefined;
+
+        const boundedWidth = width ? Math.min(width, 960) : 960;
+        const maxHeight = height ? Math.min(height, 620) : 620;
+
+        return (
+          <figure
+            key={key}
+            className="post-image-container"
+            style={{
+              width: `min(100%, ${boundedWidth}px)`,
+              maxWidth: `min(100%, ${boundedWidth}px)`,
+              aspectRatio: aspectRatioValue,
+            }}
+          >
+            <img
+              src={source}
+              alt={image.alt || ""}
+              className="post-image"
+              loading="lazy"
+              width={width || undefined}
+              height={height || undefined}
+              style={{
+                maxHeight: `${maxHeight}px`,
+              }}
+            />
+            {image.caption && (
+              <figcaption className="post-image-caption">
+                {image.caption}
+              </figcaption>
+            )}
+          </figure>
+        );
+      }
 
     case "VIDEO":
       return (
@@ -327,6 +366,13 @@ const sampleAuthor = {
 export default function PostView({ post = samplePost }) {
   if (!post) return <div className="post-loading">Loading...</div>;
 
+  const coverMeta = post.coverImageMeta || {};
+  const coverImageSrc =
+    coverMeta.displayUrl ||
+    coverMeta.secureUrl ||
+    coverMeta.originalUrl ||
+    post.coverImage;
+
   return (
     <article className="post-container">
       <header className="post-header">
@@ -336,9 +382,18 @@ export default function PostView({ post = samplePost }) {
         {/* 👇 Author Metadata Section */}
         <PostMeta author={sampleAuthor} />
 
-        {post.coverImage && (
+        {coverImageSrc && (
           <div className="post-cover-image">
-            <img src={post.coverImage} alt="cover" />
+            <img
+              src={coverImageSrc}
+              alt={coverMeta.alt || post.title || "cover"}
+              loading="lazy"
+              width={coverMeta.width || undefined}
+              height={coverMeta.height || undefined}
+              style={{
+                maxHeight: coverMeta.height ? `${Math.min(coverMeta.height, 620)}px` : undefined,
+              }}
+            />
           </div>
         )}
       </header>

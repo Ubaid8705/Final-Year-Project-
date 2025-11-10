@@ -63,6 +63,14 @@
 .write-header__state {
     font-size: 0.95rem;
     color: #6b6b6b;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.write-header__state-message {
+    font-size: 0.8rem;
+    color: #c0392b;
 }
 
 .write-header__right {
@@ -146,6 +154,18 @@
     background: #ffffff;
 }
 
+.write-cover--loading::after {
+    content: "Uploading…";
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    background: rgba(255, 255, 255, 0.78);
+    color: #1a8917;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+}
+
 .write-cover img {
     width: 100%;
     height: 100%;
@@ -185,6 +205,13 @@
     box-shadow: 0 20px 40px -30px rgba(0, 0, 0, 0.6);
 }
 
+.write-cover__placeholder button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+}
+
 .write-cover__actions {
     position: absolute;
     right: 16px;
@@ -208,8 +235,39 @@
     text-decoration: underline;
 }
 
+.write-cover__actions button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    text-decoration: none;
+}
+
 .write-cover__input {
     display: none;
+}
+
+.write-cover__meta {
+    position: absolute;
+    left: 16px;
+    bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border-radius: 999px;
+    background: rgba(17, 17, 17, 0.72);
+    color: #ffffff;
+    font-size: 0.78rem;
+}
+
+.write-cover__status {
+    margin-top: 12px;
+    font-size: 0.85rem;
+    text-align: center;
+    color: #555555;
+}
+
+.write-cover__status--error {
+    color: #c0392b;
 }
 
 .write-fields {
@@ -325,6 +383,12 @@
     outline: none;
 }
 
+.write-plus__image-options {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
 .write-plus__url {
     display: flex;
     align-items: center;
@@ -358,6 +422,20 @@
 
 .write-plus__url-cancel {
     background: transparent;
+}
+
+.write-plus__status {
+    margin-top: 8px;
+    font-size: 0.75rem;
+    color: rgba(255, 255, 255, 0.8);
+}
+
+.write-plus__status--error {
+    color: #ffb4b4;
+}
+
+.write-inline-image-input {
+    display: none;
 }
 
 .write-code-toolbar {

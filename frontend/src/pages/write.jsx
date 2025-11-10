@@ -27,6 +27,8 @@ import Link from "@tiptap/extension-link";
 import Image from "@tiptap/extension-image";
 import Youtube from "@tiptap/extension-youtube";
 import { useAuth } from "../contexts/AuthContext";
+import { API_BASE_URL } from "../config";
+import { uploadImage } from "../services/mediaService";
 import "./write.css";
 
 const LinkIcon = (props) => (
@@ -46,10 +48,49 @@ const LinkIcon = (props) => (
   </svg>
 );
 
+const EnhancedImage = Image.extend({
+  addAttributes() {
+    const parentAttributes = (typeof this.parent === "function" && this.parent()) || {};
+    return {
+      ...parentAttributes,
+      width: { default: null },
+      height: { default: null },
+      publicId: { default: null },
+      displayUrl: { default: null },
+      originalUrl: { default: null },
+      thumbnailUrl: { default: null },
+      placeholderUrl: { default: null },
+      aspectRatio: { default: null },
+    };
+  },
+});
+
 const buildFallbackAvatar = (seed) =>
   `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(
     seed || "Writer"
   )}`;
+
+const loadImageDimensions = (src) =>
+  new Promise((resolve, reject) => {
+    if (!src) {
+      reject(new Error("Missing image source"));
+      return;
+    }
+
+    if (typeof window === "undefined" || typeof window.Image !== "function") {
+      resolve({ width: null, height: null });
+      return;
+    }
+
+    const img = new window.Image();
+    img.onload = () => {
+      const width = img.naturalWidth || img.width || null;
+      const height = img.naturalHeight || img.height || null;
+      resolve({ width, height });
+    };
+    img.onerror = () => reject(new Error("Failed to load image"));
+    img.src = src;
+  });
 
 const formatRelativeTimestamp = (timestamp) => {
   if (!timestamp) {
@@ -326,29 +367,38 @@ const shouldShowFloatingMenu = (editor, state) => {
 
 const Write = ({ postId, authorId }) => {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, token } = useAuth();
 
   const [title, setTitle] = useState("");
   const [subtitle, setSubtitle] = useState("");
   const [tags, setTags] = useState([]);
   const [tagInput, setTagInput] = useState("");
-  const [coverUrl, setCoverUrl] = useState("");
+  const [coverAsset, setCoverAsset] = useState(null);
+  const [coverUploadState, setCoverUploadState] = useState({ loading: false, error: null });
+  const [inlineUploadState, setInlineUploadState] = useState({ loading: false, error: null });
   const [lastSavedAt, setLastSavedAt] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState(null);
+  const [isPublishing, setIsPublishing] = useState(false);
   const [isEditorEmpty, setIsEditorEmpty] = useState(true);
   const [isInsertMenuOpen, setIsInsertMenuOpen] = useState(false);
-  const [insertMode, setInsertMode] = useState(null); // 'image' | 'video' | 'embed'
+  const [insertMode, setInsertMode] = useState(null); // 'image' | 'image-link' | 'video' | 'embed'
   const [urlInput, setUrlInput] = useState("");
   const [floatingMenuState, setFloatingMenuState] = useState({
     top: 0,
     left: 0,
     visible: false,
   });
+  const [draftMeta, setDraftMeta] = useState(() => ({ id: postId || null, slug: null }));
 
   const coverInputRef = useRef(null);
+  const inlineImageInputRef = useRef(null);
   const autoSaveTimer = useRef(null);
+  const editorRef = useRef(null);
   const editorContainerRef = useRef(null);
   const floatingMenuRef = useRef(null);
+  const saveInFlightRef = useRef(false);
+  const pendingSaveRef = useRef(false);
 
   const displayName = user?.name || user?.username || "Your workspace";
 
@@ -358,17 +408,207 @@ const Write = ({ postId, authorId }) => {
     [user?.avatar, user?.profilePicture, displayName]
   );
 
+  const buildPayload = useCallback(
+    (overrides = {}) => {
+      const editorInstance = editorRef.current;
+      if (!editorInstance) {
+        return null;
+      }
+
+      const documentJson = editorInstance.getJSON();
+      const contentBlocks = transformDocToContent(documentJson);
+      const plainText = editorInstance.getText();
+      const wordCount = plainText
+        ? plainText.trim().split(/\s+/).filter(Boolean).length
+        : 0;
+      const readingTime = wordCount ? Math.max(1, Math.ceil(wordCount / 200)) : 0;
+
+      return {
+        title: title.trim(),
+        subtitle: subtitle.trim(),
+        tags,
+        content: contentBlocks,
+        coverImage:
+          coverAsset?.displayUrl || coverAsset?.secureUrl || coverAsset?.originalUrl || null,
+        coverImageMeta: coverAsset
+          ? {
+              displayUrl: coverAsset.displayUrl,
+              originalUrl: coverAsset.originalUrl,
+              thumbnailUrl: coverAsset.thumbnailUrl,
+              placeholderUrl: coverAsset.placeholderUrl,
+              publicId: coverAsset.publicId,
+              width: coverAsset.width,
+              height: coverAsset.height,
+              aspectRatio: coverAsset.aspectRatio,
+              format: coverAsset.format,
+              bytes: coverAsset.bytes,
+              uploadedAt: coverAsset.uploadedAt,
+            }
+          : null,
+        wordCount,
+        readingTime,
+        ...overrides,
+      };
+    },
+  [title, subtitle, tags, coverAsset]
+  );
+
+  const sendPostPayload = useCallback(
+    async (payload) => {
+      if (!token) {
+        throw new Error("Authentication required.");
+      }
+
+      const hasExistingDraft = Boolean(draftMeta?.id);
+      const endpoint = hasExistingDraft
+        ? `${API_BASE_URL}/api/posts/${draftMeta.id}`
+        : `${API_BASE_URL}/api/posts`;
+      const method = hasExistingDraft ? "PATCH" : "POST";
+
+      const response = await fetch(endpoint, {
+        method,
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(data?.error || "Failed to save post.");
+      }
+
+      const nextId = data.id || data._id || draftMeta?.id || null;
+      const nextSlug = data.slug || draftMeta?.slug || null;
+
+      setDraftMeta((previous) => ({
+        id: nextId,
+        slug: nextSlug || previous?.slug || null,
+      }));
+
+      if (Object.prototype.hasOwnProperty.call(data, "coverImageMeta")) {
+        if (data.coverImageMeta) {
+          setCoverAsset((previous) => {
+            const displayUrl =
+              data.coverImageMeta.displayUrl ||
+              data.coverImage ||
+              previous?.displayUrl ||
+              data.coverImageMeta.originalUrl ||
+              previous?.originalUrl ||
+              null;
+
+            return {
+              ...previous,
+              ...data.coverImageMeta,
+              displayUrl,
+              originalUrl:
+                data.coverImageMeta.originalUrl ||
+                previous?.originalUrl ||
+                data.coverImage ||
+                displayUrl ||
+                null,
+              secureUrl:
+                data.coverImage ||
+                data.coverImageMeta.secureUrl ||
+                previous?.secureUrl ||
+                displayUrl ||
+                null,
+            };
+          });
+        } else {
+          setCoverAsset(null);
+        }
+      }
+
+      return data;
+    },
+    [draftMeta, token]
+  );
+
+  const persistDraft = useCallback(async () => {
+    const editorInstance = editorRef.current;
+    if (!editorInstance || !token) {
+      setIsSaving(false);
+      return;
+    }
+
+    if (saveInFlightRef.current) {
+      pendingSaveRef.current = true;
+      return;
+    }
+
+    const payload = buildPayload({ isPublished: false });
+    if (!payload) {
+      setIsSaving(false);
+      return;
+    }
+
+    const hasMeaningfulContent =
+      payload.title ||
+      payload.subtitle ||
+      payload.coverImage ||
+      (Array.isArray(payload.content) && payload.content.length > 0);
+
+    if (!hasMeaningfulContent) {
+      setIsSaving(false);
+      return;
+    }
+
+    saveInFlightRef.current = true;
+    setSaveError(null);
+
+    try {
+      await sendPostPayload(payload);
+      setLastSavedAt(Date.now());
+    } catch (error) {
+      console.error(error);
+      setSaveError(error.message || "Failed to save draft.");
+    } finally {
+      saveInFlightRef.current = false;
+      if (pendingSaveRef.current) {
+        pendingSaveRef.current = false;
+        persistDraft();
+        return;
+      }
+      setIsSaving(false);
+    }
+  }, [token, buildPayload, sendPostPayload]);
+
+  const waitForActiveSave = useCallback(() => {
+    if (!saveInFlightRef.current) {
+      return Promise.resolve();
+    }
+
+    return new Promise((resolve) => {
+      const check = () => {
+        if (!saveInFlightRef.current) {
+          resolve();
+        } else {
+          window.setTimeout(check, 120);
+        }
+      };
+
+      check();
+    });
+  }, []);
+
   const scheduleAutoSave = useCallback(() => {
+    if (!editorRef.current || !token) {
+      return;
+    }
+
     setIsSaving(true);
     if (autoSaveTimer.current) {
       clearTimeout(autoSaveTimer.current);
     }
 
     autoSaveTimer.current = window.setTimeout(() => {
-      setLastSavedAt(Date.now());
-      setIsSaving(false);
+      autoSaveTimer.current = null;
+      persistDraft();
     }, 1200);
-  }, []);
+  }, [token, persistDraft]);
 
   const codeSyntaxLowlight = useMemo(() => {
     const instance = createLowlight();
@@ -416,7 +656,7 @@ const Write = ({ postId, authorId }) => {
         autolink: true,
         linkOnPaste: true,
       }),
-      Image.configure({ inline: false }),
+      EnhancedImage.configure({ inline: false }),
       Youtube.configure({
         controls: true,
         nocookie: true,
@@ -427,6 +667,16 @@ const Write = ({ postId, authorId }) => {
       scheduleAutoSave();
     },
   });
+
+  useEffect(() => {
+    editorRef.current = editor;
+
+    return () => {
+      if (editorRef.current === editor) {
+        editorRef.current = null;
+      }
+    };
+  }, [editor]);
 
   useEffect(() => {
     return () => {
@@ -679,66 +929,215 @@ const Write = ({ postId, authorId }) => {
     navigate(-1);
   };
 
-  const handleCoverSelect = (event) => {
+  const handleCoverSelect = async (event) => {
     const file = event.target.files?.[0];
     if (!file) {
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === "string") {
-        setCoverUrl(reader.result);
-        scheduleAutoSave();
-      }
-    };
-    reader.readAsDataURL(file);
-    event.target.value = "";
-  };
-
-  const handleCoverRemove = () => {
-    setCoverUrl("");
-    scheduleAutoSave();
-  };
-
-  const handlePublish = () => {
-    if (!editor) {
+    if (!token) {
+      setCoverUploadState({ loading: false, error: "Sign in to upload images." });
+      event.target.value = "";
       return;
     }
 
-    const documentJson = editor.getJSON();
-    const content = transformDocToContent(documentJson);
-    const plainText = editor.getText();
-    const wordCount = plainText
-      ? plainText.trim().split(/\s+/).filter(Boolean).length
-      : 0;
-    const readingTime = wordCount ? Math.max(1, Math.ceil(wordCount / 200)) : 0;
+    setCoverUploadState({ loading: true, error: null });
 
-    const payload = {
-      id: postId || undefined,
-      authorId: authorId || user?.id || user?._id,
-      title: title.trim(),
-      subtitle: subtitle.trim(),
-      tags,
-      coverImage: coverUrl || null,
-      content,
-      wordCount,
-      readingTime,
-    };
-
-    console.log("Publish payload", payload);
-    window.alert("Publishing flow coming soon. Your draft is safe.");
-    setLastSavedAt(Date.now());
+    try {
+      const asset = await uploadImage({ file, token, purpose: "cover" });
+      setCoverAsset(asset);
+      setCoverUploadState({ loading: false, error: null });
+      scheduleAutoSave();
+    } catch (error) {
+      console.error(error);
+      setCoverUploadState({
+        loading: false,
+        error: error.message || "Failed to upload cover image.",
+      });
+    } finally {
+      // reset the input so the same file can be selected again if needed
+      event.target.value = "";
+    }
   };
+
+  const handleCoverRemove = () => {
+    setCoverAsset(null);
+    scheduleAutoSave();
+  };
+
+  const handlePublish = useCallback(async () => {
+    if (!token) {
+      setSaveError("Sign in to publish your story.");
+      return;
+    }
+
+    if (autoSaveTimer.current) {
+      clearTimeout(autoSaveTimer.current);
+      autoSaveTimer.current = null;
+    }
+
+    pendingSaveRef.current = false;
+    await waitForActiveSave();
+
+    const payload = buildPayload({ isPublished: true });
+    if (!payload) {
+      return;
+    }
+
+    if (!payload.title) {
+      window.alert("Add a title before publishing.");
+      return;
+    }
+
+    setIsPublishing(true);
+    setSaveError(null);
+
+    try {
+      saveInFlightRef.current = true;
+      const data = await sendPostPayload(payload);
+      setLastSavedAt(Date.now());
+
+      const targetSlug = data.slug || draftMeta?.slug;
+      const targetId = data.id || data._id || draftMeta?.id;
+
+      if (targetSlug) {
+        navigate(`/post/${targetSlug}`);
+      } else if (targetId) {
+        navigate(`/post/${targetId}`);
+      } else {
+        navigate(-1);
+      }
+    } catch (error) {
+      console.error(error);
+      setSaveError(error.message || "Failed to publish your story.");
+    } finally {
+      saveInFlightRef.current = false;
+      setIsPublishing(false);
+      if (pendingSaveRef.current) {
+        pendingSaveRef.current = false;
+        persistDraft();
+      }
+    }
+  }, [token, waitForActiveSave, buildPayload, sendPostPayload, draftMeta, navigate, persistDraft]);
 
   const headerStatus = isSaving
     ? "Saving..."
     : formatRelativeTimestamp(lastSavedAt);
 
+  const insertImageAsset = useCallback(
+    async (asset) => {
+      if (!editor || !asset) {
+        return;
+      }
+
+      const displayUrl = asset.displayUrl || asset.secureUrl || asset.originalUrl;
+      if (!displayUrl) {
+        return;
+      }
+
+      let width = asset.width;
+      let height = asset.height;
+
+      if ((!width || !height) && displayUrl) {
+        try {
+          const dimensions = await loadImageDimensions(displayUrl);
+          width = width || dimensions.width;
+          height = height || dimensions.height;
+        } catch (error) {
+          // ignore measurement failures; dimensions remain undefined
+        }
+      }
+
+      const aspectRatio =
+        asset.aspectRatio ||
+        (width && height ? Number((width / height).toFixed(4)) : null);
+
+      const attributes = {
+        src: displayUrl,
+        alt: asset.alt || "",
+        title: asset.caption || "",
+        width: width || null,
+        height: height || null,
+        publicId: asset.publicId || null,
+        displayUrl,
+        originalUrl: asset.originalUrl || displayUrl,
+        thumbnailUrl: asset.thumbnailUrl || null,
+        placeholderUrl: asset.placeholderUrl || null,
+        aspectRatio,
+      };
+
+      editor.chain().focus().setImage(attributes).run();
+      setInsertMode(null);
+      setUrlInput("");
+      setIsInsertMenuOpen(false);
+      scheduleAutoSave();
+    },
+    [editor, scheduleAutoSave]
+  );
+
   const insertImage = useCallback(() => {
     setInsertMode("image");
     setUrlInput("");
+    setInlineUploadState({ loading: false, error: null });
   }, []);
+
+  const handleInlineUploadClick = useCallback(() => {
+    inlineImageInputRef.current?.click();
+  }, []);
+
+  const handleInlineFileChange = useCallback(
+    async (event) => {
+      const file = event.target.files?.[0];
+      if (!file) {
+        return;
+      }
+
+      if (!token) {
+        setInlineUploadState({ loading: false, error: "Sign in to upload images." });
+        event.target.value = "";
+        return;
+      }
+
+      setInlineUploadState({ loading: true, error: null });
+
+      try {
+        const asset = await uploadImage({ file, token, purpose: "inline" });
+        await insertImageAsset(asset);
+        setInlineUploadState({ loading: false, error: null });
+      } catch (error) {
+        console.error(error);
+        setInlineUploadState({
+          loading: false,
+          error: error.message || "Failed to upload image.",
+        });
+      } finally {
+        event.target.value = "";
+      }
+    },
+    [insertImageAsset, token]
+  );
+
+  const handleImageUrlSubmit = useCallback(async () => {
+    const url = urlInput.trim();
+    if (!url) {
+      return;
+    }
+
+    setInlineUploadState({ loading: false, error: null });
+
+    try {
+      await insertImageAsset({
+        displayUrl: url,
+        originalUrl: url,
+      });
+    } catch (error) {
+      console.error(error);
+      setInlineUploadState({
+        loading: false,
+        error: "Unable to insert image from that URL.",
+      });
+    }
+  }, [insertImageAsset, urlInput]);
 
   const insertVideo = useCallback(() => {
     setInsertMode("video");
@@ -901,7 +1300,14 @@ const Write = ({ postId, authorId }) => {
             {"<"}
           </button>
           <div className="write-header__state">
-            Draft in {displayName} - {headerStatus}
+            <span>
+              Draft in {displayName} — {headerStatus}
+            </span>
+            {saveError && (
+              <span className="write-header__state-message" role="alert">
+                {saveError}
+              </span>
+            )}
           </div>
         </div>
         <div className="write-header__right">
@@ -916,8 +1322,9 @@ const Write = ({ postId, authorId }) => {
             type="button"
             className="write-header__btn write-header__btn--primary"
             onClick={handlePublish}
+            disabled={isPublishing}
           >
-            Publish
+            {isPublishing ? "Publishing…" : "Publish"}
           </button>
           <div className="write-header__profile">
             <img src={displayAvatar} alt={displayName} />
@@ -929,19 +1336,43 @@ const Write = ({ postId, authorId }) => {
       <main className="write-main">
         <section className="write-stage">
           <div
-            className={`write-cover${coverUrl ? " write-cover--filled" : ""}`}
+            className={`write-cover${coverAsset ? " write-cover--filled" : ""}${
+              coverUploadState.loading ? " write-cover--loading" : ""
+            }`}
           >
-            {coverUrl ? (
+            {coverAsset ? (
               <>
-                <img src={coverUrl} alt="Cover" />
+                <img
+                  src={
+                    coverAsset.displayUrl ||
+                    coverAsset.secureUrl ||
+                    coverAsset.originalUrl
+                  }
+                  alt={coverAsset.alt || "Cover"}
+                />
+                {(coverAsset.width || coverAsset.height || coverAsset.aspectRatio) && (
+                  <div className="write-cover__meta">
+                    {(coverAsset.width || coverAsset.height) && (
+                      <span>{`${coverAsset.width ? `${coverAsset.width}px` : "?"} × ${coverAsset.height ? `${coverAsset.height}px` : "?"}`}</span>
+                    )}
+                    {typeof coverAsset.aspectRatio === "number" && (
+                      <span>{` • ${coverAsset.aspectRatio.toFixed(2)}`}</span>
+                    )}
+                  </div>
+                )}
                 <div className="write-cover__actions">
                   <button
                     type="button"
                     onClick={() => coverInputRef.current?.click()}
+                    disabled={coverUploadState.loading}
                   >
                     Replace
                   </button>
-                  <button type="button" onClick={handleCoverRemove}>
+                  <button
+                    type="button"
+                    onClick={handleCoverRemove}
+                    disabled={coverUploadState.loading}
+                  >
                     Remove
                   </button>
                 </div>
@@ -953,8 +1384,9 @@ const Write = ({ postId, authorId }) => {
                 <button
                   type="button"
                   onClick={() => coverInputRef.current?.click()}
+                  disabled={coverUploadState.loading}
                 >
-                  Upload
+                  {coverUploadState.loading ? "Uploading…" : "Upload"}
                 </button>
               </div>
             )}
@@ -965,6 +1397,11 @@ const Write = ({ postId, authorId }) => {
               className="write-cover__input"
               onChange={handleCoverSelect}
             />
+            {coverUploadState.error && (
+              <p className="write-cover__status write-cover__status--error">
+                {coverUploadState.error}
+              </p>
+            )}
           </div>
 
           <div className="write-fields">
@@ -1005,6 +1442,7 @@ const Write = ({ postId, authorId }) => {
                     event.stopPropagation();
                     setInsertMode(null);
                     setUrlInput("");
+                    setInlineUploadState({ loading: false, error: null });
                     setIsInsertMenuOpen((prev) => !prev);
                   }}
                   aria-expanded={isInsertMenuOpen}
@@ -1013,8 +1451,48 @@ const Write = ({ postId, authorId }) => {
                   {isInsertMenuOpen ? "×" : "+"}
                 </button>
                 {isInsertMenuOpen && (
-                  <div className="write-plus__options">
-                    {insertMode ? (
+                  <>
+                    <div className="write-plus__options">
+                    {insertMode === "image-link" ? (
+                      <div className="write-plus__url">
+                        <input
+                          className="write-plus__url-input"
+                          value={urlInput}
+                          onChange={(e) => setUrlInput(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              handleImageUrlSubmit();
+                            }
+                            if (e.key === "Escape") {
+                              setInsertMode("image");
+                            }
+                          }}
+                          placeholder="Paste image URL"
+                        />
+                        <button
+                          type="button"
+                          className="write-plus__url-confirm"
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={handleImageUrlSubmit}
+                        >
+                          Add
+                        </button>
+                        <button
+                          type="button"
+                          className="write-plus__url-cancel"
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => {
+                            setUrlInput("");
+                            setInlineUploadState({ loading: false, error: null });
+                            setInsertMode("image");
+                          }}
+                          aria-label="Cancel"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ) : insertMode === "video" ? (
                       <div className="write-plus__url">
                         <input
                           className="write-plus__url-input"
@@ -1024,20 +1502,7 @@ const Write = ({ postId, authorId }) => {
                             if (e.key === "Enter") {
                               const url = urlInput.trim();
                               if (!url) return;
-                              if (insertMode === "image") {
-                                editor.chain().focus().setImage({ src: url }).run();
-                              } else if (insertMode === "video") {
-                                editor.chain().focus().setYoutubeVideo({ src: url }).run();
-                              } else if (insertMode === "embed") {
-                                editor
-                                  .chain()
-                                  .focus()
-                                  .insertContent({
-                                    type: "blockquote",
-                                    content: [{ type: "text", text: url }],
-                                  })
-                                  .run();
-                              }
+                              editor.chain().focus().setYoutubeVideo({ src: url }).run();
                               setInsertMode(null);
                               setUrlInput("");
                               setIsInsertMenuOpen(false);
@@ -1046,13 +1511,7 @@ const Write = ({ postId, authorId }) => {
                               setInsertMode(null);
                             }
                           }}
-                          placeholder={
-                            insertMode === "video"
-                              ? "Paste video URL"
-                              : insertMode === "embed"
-                              ? "Paste link to embed"
-                              : "Paste image URL"
-                          }
+                          placeholder="Paste video URL"
                         />
                         <button
                           type="button"
@@ -1061,11 +1520,34 @@ const Write = ({ postId, authorId }) => {
                           onClick={() => {
                             const url = urlInput.trim();
                             if (!url) return;
-                            if (insertMode === "image") {
-                              editor.chain().focus().setImage({ src: url }).run();
-                            } else if (insertMode === "video") {
-                              editor.chain().focus().setYoutubeVideo({ src: url }).run();
-                            } else if (insertMode === "embed") {
+                            editor.chain().focus().setYoutubeVideo({ src: url }).run();
+                            setInsertMode(null);
+                            setUrlInput("");
+                            setIsInsertMenuOpen(false);
+                          }}
+                        >
+                          Add
+                        </button>
+                        <button
+                          type="button"
+                          className="write-plus__url-cancel"
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => setInsertMode(null)}
+                          aria-label="Cancel"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ) : insertMode === "embed" ? (
+                      <div className="write-plus__url">
+                        <input
+                          className="write-plus__url-input"
+                          value={urlInput}
+                          onChange={(e) => setUrlInput(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              const url = urlInput.trim();
+                              if (!url) return;
                               editor
                                 .chain()
                                 .focus()
@@ -1074,13 +1556,70 @@ const Write = ({ postId, authorId }) => {
                                   content: [{ type: "text", text: url }],
                                 })
                                 .run();
+                              setInsertMode(null);
+                              setUrlInput("");
+                              setIsInsertMenuOpen(false);
                             }
+                            if (e.key === "Escape") {
+                              setInsertMode(null);
+                            }
+                          }}
+                          placeholder="Paste link to embed"
+                        />
+                        <button
+                          type="button"
+                          className="write-plus__url-confirm"
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => {
+                            const url = urlInput.trim();
+                            if (!url) return;
+                            editor
+                              .chain()
+                              .focus()
+                              .insertContent({
+                                type: "blockquote",
+                                content: [{ type: "text", text: url }],
+                              })
+                              .run();
                             setInsertMode(null);
                             setUrlInput("");
                             setIsInsertMenuOpen(false);
                           }}
                         >
                           Add
+                        </button>
+                        <button
+                          type="button"
+                          className="write-plus__url-cancel"
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => setInsertMode(null)}
+                          aria-label="Cancel"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ) : insertMode === "image" ? (
+                      <div className="write-plus__image-options">
+                        <button
+                          type="button"
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={handleInlineUploadClick}
+                          aria-label="Upload image"
+                          disabled={inlineUploadState.loading}
+                        >
+                          {inlineUploadState.loading ? "Uploading…" : "Upload image"}
+                        </button>
+                        <button
+                          type="button"
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => {
+                            setInlineUploadState({ loading: false, error: null });
+                            setUrlInput("");
+                            setInsertMode("image-link");
+                          }}
+                          aria-label="Paste image URL"
+                        >
+                          Paste image URL
                         </button>
                         <button
                           type="button"
@@ -1136,10 +1675,25 @@ const Write = ({ postId, authorId }) => {
                         </button>
                       </>
                     )}
-                  </div>
+                    </div>
+                    {inlineUploadState.error && (
+                      <p className="write-plus__status write-plus__status--error">
+                        {inlineUploadState.error}
+                      </p>
+                    )}
+                  </>
                 )}
               </div>
             )}
+
+            <input
+              ref={inlineImageInputRef}
+              type="file"
+              accept="image/*"
+              className="write-inline-image-input"
+              onChange={handleInlineFileChange}
+              aria-hidden="true"
+            />
 
             {editor && bubbleMenuItems.length > 0 && (
               <BubbleMenu editor={editor} tippyOptions={{ duration: 120 }}>

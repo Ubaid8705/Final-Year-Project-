@@ -159,6 +159,151 @@ const hasSettingOverrides = (body = {}) =>
 const mapDistributionToSendEmails = (distributionMode) =>
   (distributionMode || "AUTO_EMAIL").toUpperCase() === "AUTO_EMAIL";
 
+const toTrimmedString = (value) => {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+};
+
+const toFiniteNumber = (value) => {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
+};
+
+const normalizeImageAsset = (image = {}) => {
+  if (!image || typeof image !== "object") {
+    return null;
+  }
+
+  const normalized = {};
+
+  const assignString = (key, sourceKey = key) => {
+    const value = toTrimmedString(image[sourceKey]);
+    if (value) {
+      normalized[key] = value;
+    }
+  };
+
+  assignString("url");
+  assignString("displayUrl");
+  assignString("originalUrl");
+  assignString("thumbnailUrl");
+  assignString("placeholderUrl");
+  assignString("publicId");
+  assignString("alt");
+  assignString("caption");
+
+  const width = toFiniteNumber(image.width);
+  if (width !== null) {
+    normalized.width = width;
+  }
+
+  const height = toFiniteNumber(image.height);
+  if (height !== null) {
+    normalized.height = height;
+  }
+
+  const aspectRatio = toFiniteNumber(image.aspectRatio);
+  if (aspectRatio !== null) {
+    normalized.aspectRatio = aspectRatio;
+  } else if (width && height) {
+    normalized.aspectRatio = Number((width / height).toFixed(4));
+  }
+
+  if (!normalized.url && normalized.displayUrl) {
+    normalized.url = normalized.displayUrl;
+  }
+
+  return Object.keys(normalized).length > 0 ? normalized : null;
+};
+
+const normalizeCoverImageMeta = (meta = {}) => {
+  if (!meta || typeof meta !== "object") {
+    return null;
+  }
+
+  const base = normalizeImageAsset(meta) || {};
+
+  const format = toTrimmedString(meta.format);
+  if (format) {
+    base.format = format;
+  }
+
+  const bytes = toFiniteNumber(meta.bytes);
+  if (bytes !== null) {
+    base.bytes = bytes;
+  }
+
+  const uploadedAtCandidate = meta.uploadedAt || meta.uploaded_at;
+  if (uploadedAtCandidate) {
+    const uploadDate = new Date(uploadedAtCandidate);
+    if (!Number.isNaN(uploadDate.getTime())) {
+      base.uploadedAt = uploadDate;
+    }
+  }
+
+  return Object.keys(base).length > 0 ? base : null;
+};
+
+const normalizeContentBlocks = (blocks = []) => {
+  if (!Array.isArray(blocks)) {
+    return [];
+  }
+
+  return blocks
+    .map((block) => {
+      if (!block || typeof block !== "object") {
+        return null;
+      }
+
+      const type = typeof block.type === "string" ? block.type.trim().toUpperCase() : null;
+      const normalizedBlock = {
+        ...block,
+        ...(type ? { type } : {}),
+      };
+
+      if (block.image) {
+        const normalizedImage = normalizeImageAsset(block.image);
+        if (normalizedImage) {
+          normalizedBlock.image = normalizedImage;
+        } else {
+          delete normalizedBlock.image;
+        }
+      }
+
+      return normalizedBlock;
+    })
+    .filter(Boolean);
+};
+
+const resolveCoverImageValue = (coverImage, coverMeta) => {
+  const sanitizedCover = toTrimmedString(coverImage);
+  if (sanitizedCover) {
+    return sanitizedCover;
+  }
+
+  if (coverMeta?.displayUrl) {
+    return coverMeta.displayUrl;
+  }
+
+  if (coverMeta?.url) {
+    return coverMeta.url;
+  }
+
+  if (coverMeta?.originalUrl) {
+    return coverMeta.originalUrl;
+  }
+
+  return null;
+};
+
 export const hydratePost = (postDoc) => {
   if (!postDoc) return null;
   const post = postDoc.toObject ? postDoc.toObject({ virtuals: true }) : postDoc;
@@ -209,6 +354,7 @@ export const hydratePost = (postDoc) => {
     subtitle: post.subtitle,
     slug: post.slug,
     coverImage: post.coverImage,
+  coverImageMeta: post.coverImageMeta || null,
     tags: post.tags,
     readingTime: post.readingTime,
     wordCount: post.wordCount,
@@ -483,6 +629,10 @@ export const createPost = async (req, res) => {
       isPublished = false,
     } = req.body;
 
+    const normalizedCoverMeta = normalizeCoverImageMeta(req.body.coverImageMeta);
+    const normalizedContent = normalizeContentBlocks(content);
+    const resolvedCoverImage = resolveCoverImageValue(coverImage, normalizedCoverMeta);
+
     if (!title) {
       return res.status(400).json({ error: "Title is required" });
     }
@@ -499,7 +649,7 @@ export const createPost = async (req, res) => {
     const inheritsDefaults = !hasSettingOverrides(req.body);
     const allowResponsesResolved = resolvedResponseMode !== "DISABLED";
 
-    const wordCount = countWords(content);
+    const wordCount = countWords(normalizedContent);
     const readingTime = estimateReadingTime(wordCount);
     const slug = await ensureUniqueSlug(title);
 
@@ -507,9 +657,10 @@ export const createPost = async (req, res) => {
       author: req.user._id,
       title,
       subtitle,
-      content,
+      content: normalizedContent,
       tags,
-      coverImage,
+      coverImage: resolvedCoverImage,
+      coverImageMeta: normalizedCoverMeta,
       allowResponses: allowResponsesResolved,
       responseMode: resolvedResponseMode,
       distributionMode: resolvedDistributionMode,
@@ -546,7 +697,15 @@ export const updatePost = async (req, res) => {
 
     const body = req.body || {};
     const updates = {};
-    const allowed = ["title", "subtitle", "content", "tags", "coverImage", "isPublished"];
+    const allowed = [
+      "title",
+      "subtitle",
+      "content",
+      "tags",
+      "coverImage",
+      "coverImageMeta",
+      "isPublished",
+    ];
 
     Object.entries(body).forEach(([key, value]) => {
       if (allowed.includes(key)) {
@@ -558,16 +717,29 @@ export const updatePost = async (req, res) => {
       updates.slug = await ensureUniqueSlug(updates.title, post._id);
     }
 
-    if (updates.content) {
-      const wordCount = countWords(updates.content);
+    if (Object.prototype.hasOwnProperty.call(updates, "content")) {
+      const normalizedContent = normalizeContentBlocks(updates.content);
+      updates.content = normalizedContent;
+      const wordCount = countWords(normalizedContent);
       updates.wordCount = wordCount;
       updates.readingTime = estimateReadingTime(wordCount);
     }
 
+    const hasCoverMetaUpdate = Object.prototype.hasOwnProperty.call(updates, "coverImageMeta");
+    if (hasCoverMetaUpdate) {
+      updates.coverImageMeta = normalizeCoverImageMeta(body.coverImageMeta);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(updates, "coverImage") || hasCoverMetaUpdate) {
+      const coverCandidate = Object.prototype.hasOwnProperty.call(updates, "coverImage")
+        ? updates.coverImage
+        : post.coverImage;
+      const metaCandidate = hasCoverMetaUpdate ? updates.coverImageMeta : post.coverImageMeta;
+      updates.coverImage = resolveCoverImageValue(coverCandidate, metaCandidate);
+    }
+
     if (typeof updates.isPublished === "boolean") {
-      updates.publishedAt = updates.isPublished
-        ? post.publishedAt || new Date()
-        : null;
+      updates.publishedAt = updates.isPublished ? post.publishedAt || new Date() : null;
     }
 
     let resolvedVisibility;
