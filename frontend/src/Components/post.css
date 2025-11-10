@@ -13,6 +13,19 @@
   transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
+.post-card--interactive {
+  cursor: pointer;
+}
+
+.post-card--interactive:focus-visible {
+  outline: 3px solid rgba(26, 137, 23, 0.6);
+  outline-offset: 6px;
+}
+
+.post-card--interactive:active {
+  transform: translateY(-2px);
+}
+
 .post-card:hover {
   transform: translateY(-4px);
   box-shadow: 0 24px 60px -30px rgba(0, 0, 0, 0.5);

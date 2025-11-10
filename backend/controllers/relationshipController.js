@@ -364,6 +364,26 @@ export const getFollowStats = async (req, res) => {
   }
 };
 
+export const listBlockedUsers = async (req, res) => {
+  try {
+    const relationships = await Relationship.find({
+      follower: req.user._id,
+      status: RELATIONSHIP_STATUS.BLOCKED,
+    })
+      .sort({ createdAt: -1 })
+      .populate({ path: "following", select: USER_PROJECTION })
+      .lean();
+
+    const blocked = relationships
+      .map((rel) => sanitizeUser(rel.following))
+      .filter(Boolean);
+
+    return res.json({ blocked });
+  } catch (error) {
+    return applyErrorHandling(res, error);
+  }
+};
+
 export const getMyFollowStats = async (req, res) => {
   try {
     const stats = await getFollowStatsForUser(req.user._id);

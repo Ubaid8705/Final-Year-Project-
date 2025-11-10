@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import "./post.css";
 import { API_BASE_URL } from "../config";
 import { useAuth } from "../contexts/AuthContext";
@@ -95,6 +96,7 @@ const Post = ({
   onActionFeedback,
 }) => {
   const { token } = useAuth();
+  const navigate = useNavigate();
   const [menuOpen, setMenuOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [hiding, setHiding] = useState(false);
@@ -116,6 +118,7 @@ const Post = ({
   const isPremiumAuthor = Boolean(author.isPremium);
   const postId = resolvePostId(safePost);
   const postSlug = safePost.slug || postId;
+  const targetPath = postSlug ? `/post/${postSlug}` : "";
 
   const authorAvatar = useMemo(
     () => author.avatar || buildFallbackAvatar(displayAuthor),
@@ -123,16 +126,63 @@ const Post = ({
   );
 
   const postUrl = useMemo(() => {
-    if (!postSlug) {
+    if (!targetPath) {
       return "";
     }
 
     if (typeof window !== "undefined" && window.location?.origin) {
-      return `${window.location.origin}/post/${postSlug}`;
+      return `${window.location.origin}${targetPath}`;
     }
 
-    return `/post/${postSlug}`;
-  }, [postSlug]);
+    return targetPath;
+  }, [targetPath]);
+
+  const canNavigate = Boolean(targetPath);
+
+  const handleCardNavigate = useCallback(
+    (event) => {
+      if (!canNavigate) {
+        return;
+      }
+
+      if (event?.defaultPrevented) {
+        return;
+      }
+
+      if (typeof event?.button === "number" && event.button !== 0) {
+        return;
+      }
+
+      setMenuOpen(false);
+
+      if (event?.metaKey || event?.ctrlKey) {
+        if (typeof window !== "undefined") {
+          window.open(targetPath, "_blank", "noopener,noreferrer");
+        } else {
+          navigate(targetPath);
+        }
+        return;
+      }
+
+      navigate(targetPath);
+    },
+    [canNavigate, navigate, targetPath]
+  );
+
+  const handleCardKeyDown = useCallback(
+    (event) => {
+      if (!canNavigate) {
+        return;
+      }
+
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        setMenuOpen(false);
+        navigate(targetPath);
+      }
+    },
+    [canNavigate, navigate, targetPath]
+  );
 
   useEffect(() => {
     if (!menuOpen) {
@@ -160,32 +210,44 @@ const Post = ({
     };
   }, [menuOpen]);
 
-  const handleSaveClick = useCallback(() => {
-    if (!onToggleSave || saving) {
-      return;
-    }
+  const handleSaveClick = useCallback(
+    (event) => {
+      event?.stopPropagation();
 
-    setSaving(true);
-    Promise.resolve(onToggleSave(safePost))
-      .catch(() => {})
-      .finally(() => setSaving(false));
-  }, [onToggleSave, safePost, saving]);
+      if (!onToggleSave || saving) {
+        return;
+      }
 
-  const handleShowLessClick = useCallback(() => {
-    if (!onShowLess || hiding) {
-      return;
-    }
+      setSaving(true);
+      Promise.resolve(onToggleSave(safePost))
+        .catch(() => {})
+        .finally(() => setSaving(false));
+    },
+    [onToggleSave, safePost, saving]
+  );
 
-    setHiding(true);
-    Promise.resolve(onShowLess(safePost))
-      .catch(() => {})
-      .finally(() => {
-        setHiding(false);
-        setMenuOpen(false);
-      });
-  }, [onShowLess, safePost, hiding]);
+  const handleShowLessClick = useCallback(
+    (event) => {
+      event?.stopPropagation();
 
-  const handleCopyLink = useCallback(async () => {
+      if (!onShowLess || hiding) {
+        return;
+      }
+
+      setHiding(true);
+      Promise.resolve(onShowLess(safePost))
+        .catch(() => {})
+        .finally(() => {
+          setHiding(false);
+          setMenuOpen(false);
+        });
+    },
+    [onShowLess, safePost, hiding]
+  );
+
+  const handleCopyLink = useCallback(async (event) => {
+    event?.stopPropagation();
+
     if (!postUrl) {
       onActionFeedback?.("Unable to copy link for this story.", "error");
       return;
@@ -215,7 +277,9 @@ const Post = ({
     }
   }, [postUrl, onActionFeedback]);
 
-  const handleShare = useCallback(async () => {
+  const handleShare = useCallback(async (event) => {
+    event?.stopPropagation();
+
     if (!postUrl) {
       onActionFeedback?.("Unable to share this story right now.", "error");
       setMenuOpen(false);
@@ -245,7 +309,9 @@ const Post = ({
     }
   }, [postUrl, displayTitle, displayAuthor, handleCopyLink, onActionFeedback]);
 
-  const handleReport = useCallback(async () => {
+  const handleReport = useCallback(async (event) => {
+    event?.stopPropagation();
+
     if (!postId) {
       onActionFeedback?.("Unable to report this story.", "error");
       setMenuOpen(false);
@@ -301,7 +367,17 @@ const Post = ({
 
   return (
     <article
-      className={classList("post-card", `post-card--${variant}`, hasImage ? "" : "post-card--no-image")}
+      className={classList(
+        "post-card",
+        `post-card--${variant}`,
+        hasImage ? "" : "post-card--no-image",
+        canNavigate ? "post-card--interactive" : ""
+      )}
+      onClick={canNavigate ? handleCardNavigate : undefined}
+      onKeyDown={canNavigate ? handleCardKeyDown : undefined}
+      tabIndex={canNavigate ? 0 : undefined}
+      role={canNavigate ? "link" : undefined}
+      aria-label={canNavigate ? `Open story ${displayTitle}` : undefined}
     >
       <div className="post-card__body">
         <header className="post-card__meta">
@@ -363,7 +439,10 @@ const Post = ({
               <button
                 type="button"
                 className="post-card__action-btn post-card__action-btn--menu"
-                onClick={() => setMenuOpen((open) => !open)}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setMenuOpen((open) => !open);
+                }}
                 aria-expanded={menuOpen}
                 aria-haspopup="menu"
                 title="More options"
@@ -372,7 +451,11 @@ const Post = ({
                 <span className="sr-only">More options</span>
               </button>
               {menuOpen && (
-                <ul className="post-card__actions-menu" role="menu">
+                <ul
+                  className="post-card__actions-menu"
+                  role="menu"
+                  onClick={(event) => event.stopPropagation()}
+                >
                   <li role="presentation">
                     <button type="button" role="menuitem" onClick={handleCopyLink}>
                       Copy link

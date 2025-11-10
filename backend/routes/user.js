@@ -17,6 +17,7 @@ import {
   getFollowStats,
   getMyFollowStats,
   getRelationshipStatus,
+  listBlockedUsers,
 } from "../controllers/relationshipController.js";
 import { authenticate, optionalAuthenticate } from "../middleware/authMiddleware.js";
 
@@ -24,6 +25,7 @@ const router = express.Router();
 
 router.get("/me", authenticate, getCurrentUser);
 router.get("/me/follow-stats", authenticate, getMyFollowStats);
+router.get("/me/blocked", authenticate, listBlockedUsers);
 router.put("/update", authenticate, updateUser);
 router.put("/me/topics", authenticate, updateTopics);
 router.delete("/delete", authenticate, deleteUser);

@@ -9,6 +9,10 @@ import UserSettings from "../models/Settings.js";
 import slugify from "../utils/slugify.js";
 import { countWords, estimateReadingTime } from "../utils/postMetrics.js";
 import { safeCreateNotification } from "../services/notificationService.js";
+import {
+  RELATIONSHIP_STATUS,
+  getRelationshipBetween,
+} from "../services/relationshipService.js";
 
 const isObjectId = (value = "") => mongoose.Types.ObjectId.isValid(value);
 
@@ -913,25 +917,71 @@ export const reportPost = async (req, res) => {
 export const listAuthorPosts = async (req, res) => {
   try {
     const { username } = req.params;
-    const user = await User.findOne({ username }).select("_id username name avatar bio");
+    const author = await User.findOne({ username }).select(
+      "_id username name avatar bio membershipStatus"
+    );
 
-    if (!user) {
+    if (!author) {
       return res.status(404).json({ error: "User not found" });
     }
 
-    const posts = await Post.find({ author: user._id, isPublished: true })
-      .sort({ publishedAt: -1 })
-  .populate("author", "username name avatar bio membershipStatus")
+    const viewerId = req.user?._id;
+    const isSelf = viewerId && author._id.toString() === viewerId.toString();
+
+    let outgoing = null;
+    let incoming = null;
+
+    if (viewerId && !isSelf) {
+      [outgoing, incoming] = await Promise.all([
+        getRelationshipBetween(viewerId, author._id),
+        getRelationshipBetween(author._id, viewerId),
+      ]);
+    }
+
+    if (incoming?.status === RELATIONSHIP_STATUS.BLOCKED) {
+      return res.status(403).json({ error: "This user has blocked you." });
+    }
+
+    if (outgoing?.status === RELATIONSHIP_STATUS.BLOCKED) {
+      return res
+        .status(403)
+        .json({ error: "Unblock this user to view their stories." });
+    }
+
+    const settingsDoc = await UserSettings.findOne({ user: author._id }).lean();
+    const profileVisibility = settingsDoc?.visibility || "Public";
+    const isFollower = outgoing?.status === RELATIONSHIP_STATUS.FOLLOWING;
+
+    if (!isSelf && profileVisibility === "Private" && (!viewerId || !isFollower)) {
+      return res.status(403).json({ error: "This profile is private." });
+    }
+
+    let visibilityFilter = {};
+    if (!isSelf) {
+      if (isFollower) {
+        visibilityFilter = { visibility: { $ne: "PRIVATE" } };
+      } else {
+        visibilityFilter = { visibility: "PUBLIC" };
+      }
+    }
+
+    const posts = await Post.find({
+      author: author._id,
+      isPublished: true,
+      ...visibilityFilter,
+    })
+      .sort({ publishedAt: -1, createdAt: -1 })
+      .populate("author", "username name avatar bio membershipStatus")
       .lean();
 
     res.json({
       author: {
-        id: user._id,
-        username: user.username,
-        name: user.name,
-        avatar: user.avatar,
-        bio: user.bio,
-        isPremium: Boolean(user.membershipStatus),
+        id: author._id,
+        username: author.username,
+        name: author.name,
+        avatar: author.avatar,
+        bio: author.bio,
+        isPremium: Boolean(author.membershipStatus),
       },
       posts: posts.map(hydratePost),
     });

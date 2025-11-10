@@ -1,5 +1,6 @@
 import User from "../models/User.js";
 import Relationship from "../models/Relationship.js";
+import UserSettings from "../models/Settings.js";
 import {
   RELATIONSHIP_STATUS,
   getFollowStatsForUser,
@@ -100,20 +101,41 @@ const sanitizePublicUser = (userDoc) => {
   };
 };
 
+const sanitizeProfileSettings = (settingsDoc) => {
+  if (!settingsDoc) {
+    return {
+      visibility: "Public",
+      commentSetting: "Everyone",
+      sendEmails: true,
+    };
+  }
+
+  const source = settingsDoc.toObject ? settingsDoc.toObject({ getters: true }) : settingsDoc;
+
+  return {
+    visibility: source.visibility || "Public",
+    commentSetting: source.commentSetting || "Everyone",
+    sendEmails: typeof source.sendEmails === "boolean" ? source.sendEmails : true,
+  };
+};
+
 // Get current user profile
 export const getCurrentUser = async (req, res) => {
   try {
-    const user = await User.findById(req.user._id).select(OWN_USER_PROJECTION);
+    const [userDoc, stats, settingsDoc] = await Promise.all([
+      User.findById(req.user._id).select(OWN_USER_PROJECTION),
+      getFollowStatsForUser(req.user._id),
+      UserSettings.findOne({ user: req.user._id }).lean(),
+    ]);
 
-    if (!user) {
+    if (!userDoc) {
       return res.status(404).json({ error: "User not found" });
     }
 
-    const stats = await getFollowStatsForUser(req.user._id);
-
     res.json({
-      user: sanitizeOwnUser(user),
+      user: sanitizeOwnUser(userDoc),
       stats,
+      settings: sanitizeProfileSettings(settingsDoc),
     });
   } catch (error) {
     res.status(500).json({ error: "Error fetching user profile" });
@@ -199,13 +221,28 @@ export const getUserByUsername = async (req, res) => {
       return res.status(404).json({ error: "User not found" });
     }
 
-    const stats = await getFollowStatsForUser(user._id);
+  const viewerId = req.user?._id;
+  const isSelf = viewerId && user._id.toString() === viewerId.toString();
+
+    const [stats, settingsDoc] = await Promise.all([
+      getFollowStatsForUser(user._id),
+      UserSettings.findOne({ user: user._id }).lean(),
+    ]);
+
+    const profileSettings = sanitizeProfileSettings(settingsDoc);
 
     let relationship = null;
-    if (req.user) {
+    let permissions = {
+      canViewProfile: true,
+      canViewPosts: true,
+      canViewLists: Boolean(isSelf),
+      reason: null,
+    };
+
+    if (viewerId) {
       const [outgoing, incoming] = await Promise.all([
-        getRelationshipBetween(req.user._id, user._id),
-        getRelationshipBetween(user._id, req.user._id),
+        getRelationshipBetween(viewerId, user._id),
+        getRelationshipBetween(user._id, viewerId),
       ]);
 
       relationship = {
@@ -214,12 +251,50 @@ export const getUserByUsername = async (req, res) => {
         isFollowedBy: incoming?.status === RELATIONSHIP_STATUS.FOLLOWING,
         hasBlockedYou: incoming?.status === RELATIONSHIP_STATUS.BLOCKED,
       };
+
+      if (relationship.hasBlockedYou) {
+        permissions = {
+          canViewProfile: false,
+          canViewPosts: false,
+          canViewLists: false,
+          reason: "blocked",
+        };
+      } else {
+        const isFollower = relationship.isFollowing;
+
+        if (relationship.isBlocked) {
+          permissions.canViewPosts = false;
+          permissions.canViewLists = false;
+          permissions.reason = "self-blocked";
+        }
+
+        if (profileSettings.visibility === "Private" && !isSelf && !isFollower) {
+          if (!permissions.reason) {
+            permissions.reason = "private";
+          }
+          permissions.canViewPosts = false;
+        }
+      }
+    } else if (!isSelf && profileSettings.visibility === "Private") {
+      permissions.canViewPosts = false;
+      permissions.reason = "private";
+    }
+
+    if (isSelf) {
+      permissions = {
+        canViewProfile: true,
+        canViewPosts: true,
+        canViewLists: true,
+        reason: null,
+      };
     }
 
     res.json({
       user: sanitizePublicUser(user),
       stats,
       relationship,
+      settings: profileSettings,
+      permissions,
     });
   } catch (error) {
     res.status(500).json({ error: "Error fetching user profile" });

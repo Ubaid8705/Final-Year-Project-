@@ -201,23 +201,40 @@ export default function Settings() {
   const [openMenu, setOpenMenu] = useState(null);
   const [savingField, setSavingField] = useState(null);
   const [justSavedField, setJustSavedField] = useState(null);
+  const [blockedUsers, setBlockedUsers] = useState([]);
+  const [blockedLoading, setBlockedLoading] = useState(false);
+  const [blockedError, setBlockedError] = useState(null);
+  const [blockedAction, setBlockedAction] = useState(null);
   const savedTimers = useRef({});
   const menuHostRef = useRef(null);
 
   const shareWithAuth = useCallback(
     (normalized) => {
-      if (typeof updateUser !== "function") {
+      if (typeof updateUser !== "function" || !user) {
         return;
       }
 
-      updateUser({
+      const nextState = {
         email: normalized.email,
         username: normalized.username,
         name: normalized.displayName || normalized.username,
         membershipStatus: normalized.isPremium,
+      };
+
+      const hasDifference = Object.entries(nextState).some(([key, value]) => {
+        if (key === "membershipStatus") {
+          return Boolean(user.membershipStatus) !== Boolean(value);
+        }
+        return (user[key] || "") !== (value || "");
       });
+
+      if (!hasDifference) {
+        return;
+      }
+
+      updateUser(nextState);
     },
-    [updateUser]
+    [updateUser, user]
   );
 
   const applyPayload = useCallback(
@@ -241,18 +258,18 @@ export default function Settings() {
     setError(null);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/settings/me`, {
+      const response = await fetch(`${API_BASE_URL}/api/settings/me`, {
         headers: {
           Authorization: `Bearer ${token}`,
         },
       });
 
+      const data = await response.json().catch(() => ({}));
+
       if (!response.ok) {
-        const payload = await response.json().catch(() => ({}));
-        throw new Error(payload.error || "Failed to load settings");
+        throw new Error(data.error || "Failed to load settings");
       }
 
-      const data = await response.json();
       applyPayload(data);
     } catch (fetchError) {
       setError(fetchError.message || "Unable to load settings");
@@ -261,9 +278,45 @@ export default function Settings() {
     }
   }, [token, applyPayload]);
 
+  const fetchBlockedUsers = useCallback(async () => {
+    if (!token) {
+      setBlockedUsers([]);
+      return;
+    }
+
+    setBlockedLoading(true);
+    setBlockedError(null);
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/users/me/blocked`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const payload = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(payload.error || "Failed to load blocked users");
+      }
+
+      const items = Array.isArray(payload.blocked) ? payload.blocked : [];
+      setBlockedUsers(items);
+    } catch (requestError) {
+      setBlockedUsers([]);
+      setBlockedError(requestError.message || "Failed to load blocked users");
+    } finally {
+      setBlockedLoading(false);
+    }
+  }, [token]);
+
   useEffect(() => {
     fetchSettings();
   }, [fetchSettings]);
+
+  useEffect(() => {
+    fetchBlockedUsers();
+  }, [fetchBlockedUsers]);
 
   useEffect(() => {
     setEmailInput(settingsState.email);
@@ -323,7 +376,7 @@ export default function Settings() {
           return true;
         }
 
-        const response = await fetch(`${API_BASE_URL}/settings/me`, {
+        const response = await fetch(`${API_BASE_URL}/api/settings/me`, {
           method: "PUT",
           headers: {
             "Content-Type": "application/json",
@@ -332,12 +385,12 @@ export default function Settings() {
           body: JSON.stringify(payload),
         });
 
+        const updated = await response.json().catch(() => ({}));
+
         if (!response.ok) {
-          const data = await response.json().catch(() => ({}));
-          throw new Error(data.error || "Failed to update settings");
+          throw new Error(updated.error || "Failed to update settings");
         }
 
-        const updated = await response.json();
         applyPayload(updated);
         registerJustSaved(fieldKey);
         setOpenMenu(null);
@@ -350,6 +403,40 @@ export default function Settings() {
       }
     },
     [token, applyPayload, registerJustSaved]
+  );
+
+  const handleUnblockUser = useCallback(
+    async (username) => {
+      if (!token || !username) {
+        return;
+      }
+
+      setBlockedAction(username);
+      setBlockedError(null);
+
+      try {
+    const response = await fetch(`${API_BASE_URL}/api/users/${username}/block`, {
+          method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        const payload = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+          throw new Error(payload.error || "Failed to unblock user");
+        }
+
+        setBlockedUsers((current) => current.filter((entry) => entry?.username !== username));
+      } catch (requestError) {
+        setBlockedError(requestError.message || "Failed to unblock user");
+        fetchBlockedUsers();
+      } finally {
+        setBlockedAction(null);
+      }
+    },
+    [token, fetchBlockedUsers]
   );
 
   const handleMenuSelection = useCallback(
@@ -768,6 +855,62 @@ export default function Settings() {
             </header>
             <div className="settings-card__body">{rows.map((row) => renderRow(row))}</div>
           </section>
+
+          {activeTab === "account" && (
+            <section className="settings-card">
+              <header className="settings-card__header">
+                <h2>Blocked accounts</h2>
+                <p>Manage who you've muted from interacting with you.</p>
+              </header>
+              <div className="settings-card__body settings-card__body--list">
+                {blockedLoading && (
+                  <p className="settings-blocked__status" role="status">
+                    Loading blocked users…
+                  </p>
+                )}
+                {blockedError && !blockedLoading && (
+                  <div className="settings-blocked__status settings-blocked__status--error" role="alert">
+                    <span>{blockedError}</span>
+                    <button type="button" onClick={fetchBlockedUsers}>
+                      Retry
+                    </button>
+                  </div>
+                )}
+                {!blockedLoading && !blockedError && blockedUsers.length === 0 && (
+                  <p className="settings-blocked__status" role="status">
+                    You haven't blocked anyone.
+                  </p>
+                )}
+                {!blockedLoading && !blockedError &&
+                  blockedUsers.map((entry) => (
+                    <div
+                      key={entry.id || entry.username}
+                      className="settings-blocked__item"
+                    >
+                      <div className="settings-blocked__avatar">
+                        {entry.avatar ? (
+                          <img src={entry.avatar} alt={entry.name || entry.username} />
+                        ) : (
+                          <span>{getInitials(entry.name || entry.username)}</span>
+                        )}
+                      </div>
+                      <div className="settings-blocked__meta">
+                        <p className="settings-blocked__name">{entry.name || entry.username}</p>
+                        <p className="settings-blocked__handle">@{entry.username}</p>
+                      </div>
+                      <button
+                        type="button"
+                        className="settings-blocked__action"
+                        onClick={() => handleUnblockUser(entry.username)}
+                        disabled={blockedAction === entry.username}
+                      >
+                        {blockedAction === entry.username ? "Unblocking…" : "Unblock"}
+                      </button>
+                    </div>
+                  ))}
+              </div>
+            </section>
+          )}
 
           {activeTab === "account" && (
             <section className="settings-card settings-card--danger">
