@@ -9,6 +9,7 @@ import UserSettings from "../models/Settings.js";
 import slugify from "../utils/slugify.js";
 import { countWords, estimateReadingTime } from "../utils/postMetrics.js";
 import { safeCreateNotification } from "../services/notificationService.js";
+import { normalizeObjectId, objectIdToString } from "../utils/objectId.js";
 import {
   RELATIONSHIP_STATUS,
   getRelationshipBetween,
@@ -85,6 +86,49 @@ const mapResponseModeToSetting = (mode) => {
     default:
       return "Everyone";
   }
+};
+
+const CODE_LANGUAGE_ALIASES = {
+  plaintext: "plaintext",
+  text: "plaintext",
+  plain: "plaintext",
+  none: "plaintext",
+  javascript: "javascript",
+  js: "javascript",
+  typescript: "typescript",
+  ts: "typescript",
+  python: "python",
+  py: "python",
+  java: "java",
+  ruby: "ruby",
+  rb: "ruby",
+  go: "go",
+  golang: "go",
+  php: "php",
+  xml: "xml",
+  html: "xml",
+  css: "css",
+  json: "json",
+  bash: "bash",
+  shell: "bash",
+  sh: "bash",
+};
+
+const normalizeCodeLanguageToken = (value) => {
+  if (!value) {
+    return null;
+  }
+
+  const normalized = value.toString().trim().toLowerCase();
+  if (!normalized) {
+    return null;
+  }
+
+  if (CODE_LANGUAGE_ALIASES[normalized]) {
+    return CODE_LANGUAGE_ALIASES[normalized];
+  }
+
+  return null;
 };
 
 const normalizeVisibility = (value, fallback = "PUBLIC") => {
@@ -273,6 +317,24 @@ const normalizeContentBlocks = (blocks = []) => {
         ...(type ? { type } : {}),
       };
 
+      if (type === "CODE") {
+        const normalizedLanguage = normalizeCodeLanguageToken(
+          block.codeLanguage || block.language
+        );
+
+        if (normalizedLanguage) {
+          normalizedBlock.codeLanguage = normalizedLanguage;
+          normalizedBlock.language = normalizedLanguage;
+        } else {
+          delete normalizedBlock.codeLanguage;
+          delete normalizedBlock.language;
+        }
+
+        if (typeof normalizedBlock.codeBlock === "string") {
+          normalizedBlock.codeBlock = normalizedBlock.codeBlock.replace(/\r\n?/g, "\n");
+        }
+      }
+
       if (block.image) {
         const normalizedImage = normalizeImageAsset(block.image);
         if (normalizedImage) {
@@ -311,6 +373,35 @@ const resolveCoverImageValue = (coverImage, coverMeta) => {
 export const hydratePost = (postDoc) => {
   if (!postDoc) return null;
   const post = postDoc.toObject ? postDoc.toObject({ virtuals: true }) : postDoc;
+
+  const normalizedContent = Array.isArray(post.content)
+    ? post.content.map((block) => {
+        if (!block || typeof block !== "object") {
+          return block;
+        }
+
+        const type = (block.type || "").toString().toUpperCase();
+        if (type !== "CODE") {
+          return block;
+        }
+
+        const normalizedLanguage = normalizeCodeLanguageToken(
+          block.codeLanguage || block.language
+        );
+
+        const next = { ...block };
+
+        if (normalizedLanguage) {
+          next.codeLanguage = normalizedLanguage;
+          next.language = normalizedLanguage;
+        } else {
+          delete next.codeLanguage;
+          delete next.language;
+        }
+
+        return next;
+      })
+    : post.content;
 
   const responseMode = RESPONSE_MODE_VALUES.includes((post.responseMode || "").toUpperCase())
     ? post.responseMode.toUpperCase()
@@ -357,7 +448,7 @@ export const hydratePost = (postDoc) => {
     title: post.title,
     subtitle: post.subtitle,
     slug: post.slug,
-    coverImage: post.coverImage,
+  coverImage: post.coverImage,
   coverImageMeta: post.coverImageMeta || null,
     tags: post.tags,
     readingTime: post.readingTime,
@@ -377,7 +468,7 @@ export const hydratePost = (postDoc) => {
     publishedAt: post.publishedAt,
     createdAt: post.createdAt,
     updatedAt: post.updatedAt,
-    content: post.content,
+    content: normalizedContent,
     author: post.author && {
       id: post.author._id,
       username: post.author.username,
@@ -854,17 +945,24 @@ export const clapPost = async (req, res) => {
       { new: true }
     );
 
-    if (req.user && post.author?._id?.toString() !== req.user._id.toString()) {
+    const authorId = normalizeObjectId(post?.author);
+    const actorId = normalizeObjectId(req.user?._id);
+    const authorIdString = objectIdToString(authorId);
+    const actorIdString = objectIdToString(actorId);
+    const postIdString =
+      objectIdToString(post?._id) || objectIdToString(post?.id) || post?._id?.toString();
+
+    if (authorIdString && actorIdString && authorIdString !== actorIdString) {
       const actorName = req.user.name || req.user.username || "Someone";
 
       await safeCreateNotification({
-        recipient: post.author._id,
-        sender: req.user._id,
+        recipient: authorId,
+        sender: actorId,
         type: "like",
         post: post._id,
         message: `${actorName} clapped for your story "${post.title}"`,
         metadata: {
-          postId: post._id.toString(),
+          postId: postIdString,
           postSlug: post.slug,
         },
       });

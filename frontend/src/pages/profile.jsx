@@ -35,19 +35,50 @@ const formatNumber = (value) => {
   return number.toString();
 };
 
+const BIO_WORD_LIMIT = 200;
 
-const parsePronounsInput = (value) => {
+const sanitizePronounValue = (rawValue) => {
+  if (!rawValue) {
+    return null;
+  }
+
+  const trimmed = rawValue.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const collapsedSlash = trimmed.replace(/\s*\/\s*/g, "/");
+  const normalizedWhitespace = collapsedSlash.replace(/\s{2,}/g, " ");
+  return normalizedWhitespace;
+};
+
+const normalizePronounsList = (value) => {
   if (!value) {
     return [];
   }
 
-  return value
-    .replace(/\//g, ",")
-    .replace(/\n/g, ",")
-    .split(",")
-    .map((part) => part.trim())
-    .filter(Boolean)
-    .map((part) => part.replace(/\s+/g, ""));
+  const source = Array.isArray(value)
+    ? value
+    : value
+        .split(/[\n,]+/)
+        .map((entry) => entry.trim())
+        .filter(Boolean);
+
+  return source
+    .map(sanitizePronounValue)
+    .filter((entry) => Boolean(entry))
+    .slice(0, 4);
+};
+
+const countWords = (text = "") => {
+  if (!text) {
+    return 0;
+  }
+
+  return text
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean).length;
 };
 
 const normalizeTopicsInput = (value) => {
@@ -96,13 +127,16 @@ const Profile = () => {
   const [editForm, setEditForm] = useState({
     name: "",
     bio: "",
-    pronouns: "",
+    pronouns: [],
+    pronounInput: "",
     topics: "",
     avatar: "",
   });
   const [editError, setEditError] = useState(null);
   const [editSaving, setEditSaving] = useState(false);
   const [avatarUploading, setAvatarUploading] = useState(false);
+  const [bioWordCount, setBioWordCount] = useState(0);
+  const [bioLimitReached, setBioLimitReached] = useState(false);
 
   const initializeEditForm = useCallback(() => {
     if (!viewingOwnProfile) {
@@ -111,13 +145,15 @@ const Profile = () => {
 
     const baseName = profile?.name || profile?.username || authUser?.name || authUser?.username || "";
     const baseAvatarSeed = baseName || profileUsername || authUser?.email || "Reader";
+    const existingPronouns = normalizePronounsList(profile?.pronouns);
+    const initialBio = profile?.bio || "";
+    setBioWordCount(countWords(initialBio));
+    setBioLimitReached(false);
     setEditForm({
       name: profile?.name || baseName,
-      bio: profile?.bio || "",
-      pronouns:
-        Array.isArray(profile?.pronouns) && profile.pronouns.length > 0
-          ? profile.pronouns.join(" / ")
-          : "",
+      bio: initialBio,
+      pronouns: existingPronouns,
+      pronounInput: "",
       topics:
         Array.isArray(profile?.topics) && profile.topics.length > 0
           ? profile.topics.join(", ")
@@ -191,6 +227,140 @@ const Profile = () => {
   const handleEditFieldChange = useCallback(
     (field) => (event) => {
       updateEditForm(field, event.target.value);
+    },
+    [updateEditForm]
+  );
+
+  const addPronoun = useCallback(
+    (rawValue) => {
+      const sanitized = sanitizePronounValue(rawValue);
+      if (!sanitized) {
+        setEditForm((current) => ({ ...current, pronounInput: "" }));
+        return false;
+      }
+
+      if (sanitized.length > 24) {
+        setEditError("Pronouns should be 24 characters or fewer.");
+        return false;
+      }
+
+      let added = false;
+      let limitReached = false;
+      let duplicate = false;
+
+      setEditForm((current) => {
+        const pronouns = Array.isArray(current.pronouns) ? current.pronouns : [];
+        if (pronouns.length >= 4) {
+          limitReached = true;
+          return { ...current, pronounInput: "" };
+        }
+
+        if (pronouns.some((value) => value.toLowerCase() === sanitized.toLowerCase())) {
+          duplicate = true;
+          return { ...current, pronounInput: "" };
+        }
+
+        added = true;
+        const nextPronouns = [...pronouns, sanitized];
+        return {
+          ...current,
+          pronouns: nextPronouns,
+          pronounInput: "",
+        };
+      });
+
+      if (limitReached) {
+        setEditError("You can add up to four pronouns.");
+        return false;
+      }
+
+      if (duplicate) {
+        return false;
+      }
+
+      if (added) {
+        setEditError(null);
+      }
+
+      return added;
+    },
+    [setEditError]
+  );
+
+  const removePronoun = useCallback((target) => {
+    if (!target) {
+      return;
+    }
+
+    setEditForm((current) => {
+      const pronouns = Array.isArray(current.pronouns) ? current.pronouns : [];
+      const nextPronouns = pronouns.filter(
+        (entry) => entry.toLowerCase() !== target.toLowerCase()
+      );
+      if (nextPronouns.length === pronouns.length) {
+        return current;
+      }
+      return { ...current, pronouns: nextPronouns };
+    });
+    setEditError(null);
+  }, [setEditError]);
+
+  const handlePronounInputChange = useCallback(
+    (event) => {
+      updateEditForm("pronounInput", event.target.value);
+    },
+    [updateEditForm]
+  );
+
+  const handlePronounKeyDown = useCallback(
+    (event) => {
+      if (event.key === "Enter" || event.key === "Tab" || event.key === ",") {
+        event.preventDefault();
+        addPronoun(event.currentTarget.value);
+        return;
+      }
+
+      if (event.key === "Backspace" && !event.currentTarget.value) {
+        event.preventDefault();
+        setEditForm((current) => {
+          const pronouns = Array.isArray(current.pronouns) ? current.pronouns : [];
+          if (!pronouns.length) {
+            return current;
+          }
+          const nextPronouns = pronouns.slice(0, -1);
+          return { ...current, pronouns: nextPronouns, pronounInput: "" };
+        });
+        setEditError(null);
+      }
+    },
+    [addPronoun, setEditError]
+  );
+
+  const handlePronounBlur = useCallback(
+    (event) => {
+      const value = event?.currentTarget?.value || "";
+      if (!value.trim()) {
+        updateEditForm("pronounInput", "");
+        return;
+      }
+      addPronoun(value);
+    },
+    [addPronoun, updateEditForm]
+  );
+
+  const handleBioChange = useCallback(
+    (event) => {
+      const { value } = event.target;
+      const words = countWords(value);
+
+      if (words > BIO_WORD_LIMIT) {
+        setBioLimitReached(true);
+        return;
+      }
+
+      setBioLimitReached(false);
+      setBioWordCount(words);
+      updateEditForm("bio", value);
     },
     [updateEditForm]
   );
@@ -427,22 +597,59 @@ const Profile = () => {
         return;
       }
 
-      const nextBio = (editForm.bio || "").trim();
-      const parsedPronouns = parsePronounsInput(editForm.pronouns).slice(0, 4);
-
-      if (parsedPronouns.some((value) => value.length > 4)) {
-        setEditError("Pronouns must be 4 characters or fewer each (e.g. she/her).");
+      if (bioLimitReached || bioWordCount > BIO_WORD_LIMIT) {
+        setEditError(`Your bio can include up to ${BIO_WORD_LIMIT} words.`);
         return;
+      }
+
+  const nextBioRaw = editForm.bio || "";
+  const nextBio = nextBioRaw.trim();
+
+      const currentPronounsList = normalizePronounsList(profile?.pronouns);
+      const pendingPronoun = sanitizePronounValue(editForm.pronounInput);
+      let pronounCandidates = Array.isArray(editForm.pronouns) ? [...editForm.pronouns] : [];
+      let pronounAddedFromInput = false;
+
+      if (pendingPronoun) {
+        const hasDuplicate = pronounCandidates.some(
+          (value) => value.toLowerCase() === pendingPronoun.toLowerCase()
+        );
+
+        if (pronounCandidates.length >= 4 && !hasDuplicate) {
+          setEditError("You can add up to four pronouns.");
+          return;
+        }
+
+        if (!hasDuplicate) {
+          pronounCandidates.push(pendingPronoun);
+          pronounAddedFromInput = true;
+        }
+      }
+
+      pronounCandidates = pronounCandidates
+        .map((value) => sanitizePronounValue(value))
+        .filter(Boolean)
+        .slice(0, 4);
+
+      if (pronounCandidates.some((value) => value.length > 24)) {
+        setEditError("Pronouns should be 24 characters or fewer.");
+        return;
+      }
+
+      if (pronounAddedFromInput) {
+        setEditForm((current) => ({
+          ...current,
+          pronouns: [...pronounCandidates],
+          pronounInput: "",
+        }));
       }
 
       const nextTopics = normalizeTopicsInput(editForm.topics).slice(0, 12);
       const nextAvatar = (editForm.avatar || "").trim();
 
-      const normalizedPronouns = parsedPronouns.map((value) => value.toLowerCase());
+      const normalizedPronouns = pronounCandidates.map((value) => value.toLowerCase());
 
-      const currentPronouns = Array.isArray(profile?.pronouns)
-        ? profile.pronouns.map((value) => (value || "").toLowerCase())
-        : [];
+      const currentPronouns = currentPronounsList.map((value) => value.toLowerCase());
       const currentTopics = Array.isArray(profile?.topics) ? profile.topics : [];
 
       const payload = {};
@@ -452,11 +659,11 @@ const Profile = () => {
       }
 
       if (nextBio !== (profile?.bio || "")) {
-        payload.bio = nextBio;
+        payload.bio = nextBioRaw.trim();
       }
 
       if (!arraysEqual(normalizedPronouns, currentPronouns)) {
-        payload.pronouns = parsedPronouns;
+        payload.pronouns = pronounCandidates;
       }
 
       if (!arraysEqual(nextTopics, currentTopics)) {
@@ -508,7 +715,7 @@ const Profile = () => {
         setEditSaving(false);
       }
     },
-    [editForm, fetchProfile, handleCloseEditModal, profile, token, updateStoredUser, viewingOwnProfile]
+    [bioLimitReached, bioWordCount, editForm, fetchProfile, handleCloseEditModal, profile, token, updateStoredUser, viewingOwnProfile]
   );
 
   const handleFollowToggle = useCallback(async () => {
@@ -806,7 +1013,12 @@ const Profile = () => {
                   </p>
                 )}
                 {posts.map((post) => (
-                  <Post key={post.id || post.slug} post={post} variant="profile" />
+                  <Post
+                    key={post.id || post.slug}
+                    post={post}
+                    variant="profile"
+                    canEdit={viewingOwnProfile}
+                  />
                 ))}
               </>
             )}
@@ -828,6 +1040,7 @@ const Profile = () => {
                     post={item.post}
                     variant="profile"
                     isSaved
+                    canEdit={false}
                   />
                 ))}
               </>
@@ -952,28 +1165,57 @@ const Profile = () => {
                   </label>
                   <label className="profile-edit-modal__field">
                     <span className="profile-edit-modal__label">Pronouns</span>
-                    <input
-                      type="text"
-                      className="profile-edit-modal__input"
-                      placeholder="she / her"
-                      value={editForm.pronouns}
-                      onChange={handleEditFieldChange("pronouns")}
-                      maxLength={24}
-                      disabled={editSaving}
-                    />
-                    <span className="profile-edit-modal__help">Separate with "/" or commas. Four characters max each.</span>
+                    <div className="profile-edit-modal__chips" data-disabled={editSaving ? "true" : undefined}>
+                      {Array.isArray(editForm.pronouns) &&
+                        editForm.pronouns.map((pronoun) => (
+                          <span key={pronoun} className="profile-edit-modal__chip">
+                            <span className="profile-edit-modal__chip-label">{pronoun}</span>
+                            <button
+                              type="button"
+                              className="profile-edit-modal__chip-remove"
+                              onClick={() => removePronoun(pronoun)}
+                              disabled={editSaving}
+                              aria-label={`Remove pronoun ${pronoun}`}
+                            >
+                              ×
+                            </button>
+                          </span>
+                        ))}
+                      <input
+                        type="text"
+                        className="profile-edit-modal__chips-input"
+                        value={editForm.pronounInput}
+                        onChange={handlePronounInputChange}
+                        onKeyDown={handlePronounKeyDown}
+                        onBlur={handlePronounBlur}
+                        placeholder={
+                          Array.isArray(editForm.pronouns) && editForm.pronouns.length > 0
+                            ? "Add pronoun"
+                            : "e.g. she/her"
+                        }
+                        disabled={editSaving || (editForm.pronouns?.length ?? 0) >= 4}
+                        aria-label="Add a pronoun"
+                      />
+                    </div>
+                    <span className="profile-edit-modal__help">Add up to four pronouns. Press Enter to save each one.</span>
                   </label>
                   <label className="profile-edit-modal__field">
                     <span className="profile-edit-modal__label">Bio</span>
                     <textarea
                       className="profile-edit-modal__textarea"
                       rows={4}
-                      maxLength={240}
                       value={editForm.bio}
-                      onChange={handleEditFieldChange("bio")}
+                      onChange={handleBioChange}
                       disabled={editSaving}
                     ></textarea>
-                    <span className="profile-edit-modal__help">Share what you publish or what readers can expect.</span>
+                    <div className="profile-edit-modal__meta-row">
+                      <span className="profile-edit-modal__help">Share what you publish or what readers can expect.</span>
+                      <span
+                        className={`profile-edit-modal__counter${bioLimitReached ? " profile-edit-modal__counter--alert" : ""}`}
+                      >
+                        {bioWordCount}/{BIO_WORD_LIMIT} words
+                      </span>
+                    </div>
                   </label>
                   <label className="profile-edit-modal__field">
                     <span className="profile-edit-modal__label">Topics</span>

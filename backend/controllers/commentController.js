@@ -1,13 +1,33 @@
 import mongoose from "mongoose";
 import Comment from "../models/Comments.js";
 import Post from "../models/Post.js";
+import User from "../models/User.js";
 import { safeCreateNotification } from "../services/notificationService.js";
+import { normalizeObjectId, objectIdToString } from "../utils/objectId.js";
 
 const toObjectId = (value) => {
-  if (mongoose.Types.ObjectId.isValid(value)) {
-    return new mongoose.Types.ObjectId(value);
+  return normalizeObjectId(value);
+};
+
+const MENTION_PATTERN = /@([a-z0-9_]{2,30})/gi;
+
+const extractMentionedUsernames = (text = "") => {
+  if (typeof text !== "string" || !text.includes("@")) {
+    return new Set();
   }
-  return null;
+
+  const mentions = new Set();
+  let match;
+
+  while ((match = MENTION_PATTERN.exec(text)) !== null) {
+    const username = match[1]?.trim();
+    if (!username) {
+      continue;
+    }
+    mentions.add(username);
+  }
+
+  return mentions;
 };
 
 const buildCommentResponse = (comment) => ({
@@ -95,7 +115,13 @@ export const createComment = async (req, res) => {
       return res.status(404).json({ error: "Post not found" });
     }
 
-    const comment = await Comment.create({
+    const actorId = normalizeObjectId(req.user?._id);
+    const actorIdString = objectIdToString(actorId);
+    const postAuthorId = normalizeObjectId(post.author);
+    const postAuthorIdString = objectIdToString(postAuthorId);
+    const postIdString = objectIdToString(post._id) || post._id?.toString();
+
+  const comment = await Comment.create({
       postId: postObjectId,
       userId: req.user._id,
       content: content.trim(),
@@ -106,40 +132,86 @@ export const createComment = async (req, res) => {
     await comment.populate("userId", "username name avatar");
 
     const actorName = req.user.name || req.user.username || "Someone";
+    const notifiedRecipients = new Set();
     const metadata = {
-      postId: post._id.toString(),
+      ...(postIdString ? { postId: postIdString } : {}),
       postSlug: post.slug,
       commentId: comment._id.toString(),
       excerpt: comment.content.slice(0, 160),
     };
 
-    if (post.author && post.author.toString() !== req.user._id.toString()) {
+    if (postAuthorIdString && actorIdString && postAuthorIdString !== actorIdString) {
       await safeCreateNotification({
-        recipient: post.author,
-        sender: req.user._id,
+        recipient: postAuthorId,
+        sender: actorId,
         type: "comment",
         post: post._id,
         message: `${actorName} commented on "${post.title}"`,
         metadata,
       });
+      notifiedRecipients.add(postAuthorIdString);
     }
 
+    let parentAuthorId = null;
+    let parentAuthorIdString = null;
     if (parentId) {
       const parent = await Comment.findById(parentId).select("userId").lean();
 
+      parentAuthorId = normalizeObjectId(parent?.userId);
+      parentAuthorIdString = objectIdToString(parentAuthorId);
+
       if (
-        parent?.userId &&
-        parent.userId.toString() !== req.user._id.toString() &&
-        parent.userId.toString() !== post.author?.toString()
+        parentAuthorIdString &&
+        actorIdString &&
+        parentAuthorIdString !== actorIdString &&
+        parentAuthorIdString !== postAuthorIdString
       ) {
         await safeCreateNotification({
-          recipient: parent.userId,
-          sender: req.user._id,
+          recipient: parentAuthorId,
+          sender: actorId,
           type: "reply",
           post: post._id,
           message: `${actorName} replied to your comment on "${post.title}"`,
           metadata: { ...metadata, parentCommentId: parentId.toString() },
         });
+        notifiedRecipients.add(parentAuthorIdString);
+      }
+    }
+
+    const mentionUsernames = extractMentionedUsernames(comment.content);
+
+    if (mentionUsernames.size > 0) {
+      const mentionList = Array.from(mentionUsernames);
+      const mentionedUsers = await User.find({ username: { $in: mentionList } })
+        .select("_id username name")
+        .lean();
+
+      for (const mentioned of mentionedUsers) {
+        const mentionId = normalizeObjectId(mentioned?._id);
+        const mentionIdString = objectIdToString(mentionId);
+
+        if (!mentionIdString || mentionIdString === actorIdString) {
+          continue;
+        }
+
+        if (
+          notifiedRecipients.has(mentionIdString) ||
+          mentionIdString === postAuthorIdString ||
+          mentionIdString === parentAuthorIdString
+        ) {
+          continue;
+        }
+
+        await safeCreateNotification({
+          recipient: mentionId,
+          sender: actorId,
+          type: "mention",
+          post: post._id,
+          message: `${actorName} mentioned you in a comment on "${post.title}"`,
+          metadata: { ...metadata, mentionedUsername: mentioned.username },
+        });
+
+        notifiedRecipients.add(mentionIdString);
       }
     }
 

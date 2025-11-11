@@ -3,6 +3,11 @@ import { Link, useParams } from "react-router-dom";
 import "./postview.css";
 import { API_BASE_URL } from "../config";
 import { useAuth } from "../contexts/AuthContext";
+import {
+	createCodeLowlight,
+	getCodeLanguageLabel,
+	normalizeCodeLanguage,
+} from "../utils/codeHighlight";
 
 const FALLBACK_AVATAR =
 	"https://api.dicebear.com/7.x/initials/svg?seed=Reader";
@@ -69,6 +74,43 @@ const resolveAvatar = (author) => {
 		seed
 	)}`;
 };
+
+const renderLowlightNodes = (nodes = [], parentKey = "hl") =>
+	nodes.map((node, index) => {
+		if (!node) {
+			return null;
+		}
+		if (node.type === "text") {
+			return node.value || "";
+		}
+		if (node.type !== "element") {
+			return null;
+		}
+
+		const Tag = node.tagName || "span";
+		const key = `${parentKey}-${index}`;
+		const props = {};
+
+		if (node.properties) {
+			Object.entries(node.properties).forEach(([prop, value]) => {
+				if (prop === "className") {
+					if (Array.isArray(value)) {
+						props.className = value.join(" ");
+					} else if (typeof value === "string") {
+						props.className = value;
+					}
+				} else if (value !== undefined) {
+					props[prop] = value;
+				}
+			});
+		}
+
+		return (
+			<Tag key={key} {...props}>
+				{renderLowlightNodes(node.children || [], key)}
+			</Tag>
+		);
+	});
 
 const applyMarkups = (text = "", markups = []) => {
 	if (!text || !Array.isArray(markups) || markups.length === 0) {
@@ -152,7 +194,7 @@ const renderListItems = (items = []) => {
 	));
 };
 
-const renderBlock = (block, index) => {
+const renderBlock = (block, index, renderCodeBlock) => {
 	if (!block) return null;
 	const key = block.id || `${block.type}-${index}`;
 	const type = (block.type || "").toString().toUpperCase();
@@ -212,11 +254,13 @@ const renderBlock = (block, index) => {
 			return <hr key={key} className="post-divider" />;
 
 		case "CODE":
-			return (
-				<pre key={key} className="post-code-block">
-					<code>{block.codeBlock || block.text}</code>
-				</pre>
-			);
+			return typeof renderCodeBlock === "function"
+				? renderCodeBlock(block, key)
+				: (
+					<pre key={key} className="post-code-block">
+						<code>{block.codeBlock || block.text}</code>
+					</pre>
+				);
 
 		case "IMG": {
 			const image = block.image || {};
@@ -303,12 +347,39 @@ const renderBlock = (block, index) => {
 	}
 };
 
-const CommentItem = ({ comment }) => {
+const CommentItem = ({
+	comment,
+	currentUserId,
+	replyTargetId,
+	replyContent,
+	onChangeReplyContent,
+	onStartReply,
+	onCancelReply,
+	onSubmitReply,
+	replyError,
+	replySubmitting,
+	onDelete,
+}) => {
 	const author = comment?.author;
 	const replies = Array.isArray(comment?.replies) ? comment.replies : [];
+	const commentId = comment?.id || comment?._id;
+	const currentUserIdString =
+		typeof currentUserId === "string"
+			? currentUserId
+			: currentUserId?.toString?.() || null;
+	const authorIdCandidate =
+		typeof author?._id !== "undefined" && author?._id !== null
+			? author._id
+			: author?.id;
+	const authorIdString =
+		typeof authorIdCandidate === "string"
+			? authorIdCandidate
+			: authorIdCandidate?.toString?.() || null;
+	const isReplyTarget = replyTargetId === commentId;
+	const canDelete = Boolean(currentUserIdString && authorIdString && currentUserIdString === authorIdString);
 
 	return (
-		<li className="comment-item" key={comment?.id}>
+		<li className="comment-item" key={commentId}>
 			<div className="comment-header">
 				<img
 					src={resolveAvatar(author)}
@@ -329,10 +400,72 @@ const CommentItem = ({ comment }) => {
 				<p className="comment-body">{comment.content}</p>
 			)}
 
+			<div className="comment-actions-row">
+				<button
+					type="button"
+					className="comment-action-btn"
+					onClick={() => onStartReply(comment)}
+				>
+					Reply
+				</button>
+				{canDelete ? (
+					<button
+						type="button"
+						className="comment-action-btn comment-action-btn--danger"
+						onClick={() => onDelete(comment)}
+					>
+						Delete
+					</button>
+				) : null}
+			</div>
+
+			{isReplyTarget && (
+				<form className="comment-reply-composer" onSubmit={(event) => onSubmitReply(event, comment)}>
+					<textarea
+						value={replyContent}
+						onChange={(event) => onChangeReplyContent(event.target.value)}
+						placeholder="Write a reply"
+						rows={3}
+						disabled={replySubmitting}
+					/>
+					{replyError ? <div className="comment-error">{replyError}</div> : null}
+					<div className="comment-reply-actions">
+						<button
+							type="button"
+							className="comment-action-btn"
+							onClick={onCancelReply}
+							disabled={replySubmitting}
+						>
+							Cancel
+						</button>
+						<button
+							type="submit"
+							className="comment-action-btn comment-action-btn--primary"
+							disabled={replySubmitting || !replyContent.trim()}
+						>
+							{replySubmitting ? "Replying…" : "Reply"}
+						</button>
+					</div>
+				</form>
+			)}
+
 			{replies.length > 0 && (
 				<ul className="comment-replies">
 					{replies.map((reply) => (
-						<CommentItem key={reply?.id} comment={reply} />
+						<CommentItem
+							key={reply?.id || reply?._id}
+							comment={reply}
+							currentUserId={currentUserId}
+							replyTargetId={replyTargetId}
+							replyContent={replyContent}
+							onChangeReplyContent={onChangeReplyContent}
+							onStartReply={onStartReply}
+							onCancelReply={onCancelReply}
+							onSubmitReply={onSubmitReply}
+							replyError={replyError}
+							replySubmitting={replySubmitting}
+							onDelete={onDelete}
+						/>
 					))}
 				</ul>
 			)}
@@ -391,6 +524,9 @@ const PostMeta = ({
 	const minutes = readingTime ? Math.max(1, Math.round(readingTime)) : null;
 	const readLabel = minutes ? `${minutes} min read` : null;
 	const authorName = author?.name || author?.username || "Unknown";
+	const profilePath = author?.username
+		? `/u/${encodeURIComponent(author.username)}`
+		: "/profile";
 
 	return (
 		<div className="post-meta">
@@ -403,7 +539,7 @@ const PostMeta = ({
 				<div className="post-author-info">
 					<div className="post-author-row">
 						<span className="post-author-name">{authorName}</span>
-						<Link className="post-author-profile" to="/profile">
+						<Link className="post-author-profile" to={profilePath}>
 							View profile
 						</Link>
 					</div>
@@ -467,8 +603,89 @@ export default function PostView() {
 	const [commentContent, setCommentContent] = useState("");
 	const [commentError, setCommentError] = useState(null);
 	const [commentSubmitting, setCommentSubmitting] = useState(false);
+	const [replyTargetId, setReplyTargetId] = useState(null);
+	const [replyContent, setReplyContent] = useState("");
+	const [replyError, setReplyError] = useState(null);
+	const [replySubmitting, setReplySubmitting] = useState(false);
+
+	const codeLowlight = useMemo(() => createCodeLowlight(), []);
+
+	const renderCodeBlock = useCallback(
+		(block, key) => {
+			const rawContent =
+				typeof block?.codeBlock === "string"
+					? block.codeBlock
+					: typeof block?.text === "string"
+						? block.text
+						: "";
+			const normalizedLanguage = normalizeCodeLanguage(
+				block?.codeLanguage || block?.language
+			);
+
+			let highlightTree;
+			let resolvedLanguage = normalizedLanguage || "plaintext";
+
+			try {
+				if (rawContent) {
+					if (normalizedLanguage) {
+						highlightTree = codeLowlight.highlight(
+							normalizedLanguage,
+							rawContent
+						);
+					} else if (typeof codeLowlight.highlightAuto === "function") {
+						highlightTree = codeLowlight.highlightAuto(rawContent);
+						resolvedLanguage = normalizeCodeLanguage(
+							highlightTree?.data?.language
+						) || resolvedLanguage;
+					} else {
+						highlightTree = codeLowlight.highlight("plaintext", rawContent);
+						resolvedLanguage = "plaintext";
+					}
+				} else {
+					highlightTree = { children: [] };
+					resolvedLanguage = normalizedLanguage || "plaintext";
+				}
+			} catch (error) {
+				if (typeof codeLowlight.highlightAuto === "function") {
+					highlightTree = codeLowlight.highlightAuto(rawContent || "");
+					resolvedLanguage =
+						normalizeCodeLanguage(highlightTree?.data?.language) ||
+						"plaintext";
+				} else {
+					highlightTree = codeLowlight.highlight("plaintext", rawContent || "");
+					resolvedLanguage = "plaintext";
+				}
+			}
+
+			let highlightedNodes = renderLowlightNodes(
+				highlightTree?.children || [],
+				`code-${key}`
+			);
+
+			if (!highlightedNodes || highlightedNodes.length === 0) {
+				highlightedNodes = [rawContent];
+			}
+
+			const languageLabel = getCodeLanguageLabel(resolvedLanguage);
+
+			return (
+				<pre key={key} className="post-code-block" data-language={languageLabel}>
+					<code className="hljs">{highlightedNodes}</code>
+				</pre>
+			);
+		},
+		[codeLowlight]
+	);
 
 	const isAuthenticated = Boolean(token && user);
+	const currentUserId = useMemo(() => {
+		const candidate = user?._id || user?.id || null;
+		if (!candidate) {
+			return null;
+		}
+		return typeof candidate === "string" ? candidate : candidate.toString?.() || null;
+	}, [user]);
+	const postId = post?.id || post?._id || null;
 
 	const coverImageSrc = useMemo(() => {
 		if (!post) return null;
@@ -509,14 +726,14 @@ export default function PostView() {
 	}, [id]);
 
 	const fetchComments = useCallback(async () => {
-		if (!post?.id) {
+		if (!postId) {
 			return;
 		}
 
 		setCommentsLoading(true);
 		try {
 			const response = await fetch(
-				`${API_BASE_URL}/api/comments?postId=${post.id}`
+				`${API_BASE_URL}/api/comments?postId=${postId}`
 			);
 
 			if (!response.ok) {
@@ -530,7 +747,7 @@ export default function PostView() {
 		} finally {
 			setCommentsLoading(false);
 		}
-	}, [post?.id]);
+	}, [postId]);
 
 	useEffect(() => {
 		fetchPost();
@@ -552,7 +769,7 @@ export default function PostView() {
 		setClapping(true);
 		setError(null);
 
-		const identifier = post.slug || post.id || id;
+		const identifier = post.slug || post.id || post._id || id;
 
 		try {
 			const response = await fetch(
@@ -588,7 +805,7 @@ export default function PostView() {
 				return;
 			}
 
-			if (!post?.id) {
+			if (!postId) {
 				setCommentError("Missing post reference");
 				return;
 			}
@@ -609,7 +826,7 @@ export default function PostView() {
 						"Content-Type": "application/json",
 					},
 					body: JSON.stringify({
-						postId: post.id,
+						postId,
 						content: commentContent.trim(),
 					}),
 				});
@@ -632,7 +849,159 @@ export default function PostView() {
 				setCommentSubmitting(false);
 			}
 		},
-		[commentContent, fetchComments, isAuthenticated, post, token]
+		[commentContent, fetchComments, isAuthenticated, postId, token]
+	);
+
+	const handleStartReply = useCallback(
+		(targetComment) => {
+			if (!targetComment?.id) {
+				return;
+			}
+
+			if (!isAuthenticated) {
+				setCommentError("Sign in to publish a response");
+				return;
+			}
+
+			const mentionPrefill = targetComment?.author?.username
+				? `@${targetComment.author.username} `
+				: "";
+
+			setCommentError(null);
+			setReplyError(null);
+			setReplyTargetId((previousTarget) => {
+				if (previousTarget !== targetComment.id) {
+					setReplyContent(mentionPrefill);
+				}
+				return targetComment.id;
+			});
+		},
+		[isAuthenticated]
+	);
+
+	const handleCancelReply = useCallback(() => {
+		setReplyTargetId(null);
+		setReplyContent("");
+		setReplyError(null);
+	}, []);
+
+	const handleSubmitReply = useCallback(
+		async (event, targetComment) => {
+			if (event) {
+				event.preventDefault();
+			}
+
+			if (!isAuthenticated || !token) {
+				setReplyError("Sign in to publish a response");
+				return;
+			}
+
+			if (!postId) {
+				setReplyError("Missing story reference");
+				return;
+			}
+
+			const parentId = targetComment?.id || replyTargetId;
+			if (!parentId) {
+				setReplyError("Unable to determine reply target");
+				return;
+			}
+
+			if (!replyContent.trim()) {
+				setReplyError("Write something before replying");
+				return;
+			}
+
+			setReplyError(null);
+			setReplySubmitting(true);
+
+			try {
+				const response = await fetch(`${API_BASE_URL}/api/comments`, {
+					method: "POST",
+					headers: {
+						Authorization: `Bearer ${token}`,
+						"Content-Type": "application/json",
+					},
+					body: JSON.stringify({
+						postId,
+						content: replyContent.trim(),
+						parentCommentId: parentId,
+					}),
+				});
+
+				if (!response.ok) {
+					const payload = await response.json().catch(() => ({}));
+					throw new Error(payload?.error || "Unable to publish reply");
+				}
+
+				setReplyContent("");
+				setReplyTargetId(null);
+				setPost((previous) =>
+					previous
+						? { ...previous, responseCount: (previous.responseCount || 0) + 1 }
+						: previous
+				);
+				await fetchComments();
+			} catch (submitError) {
+				console.error(submitError);
+				setReplyError(submitError.message || "Failed to publish reply");
+			} finally {
+				setReplySubmitting(false);
+			}
+		},
+			[fetchComments, isAuthenticated, postId, replyContent, replyTargetId, token]
+	);
+
+	const handleDeleteComment = useCallback(
+		async (targetComment) => {
+			if (!targetComment?.id) {
+				return;
+			}
+
+			if (!isAuthenticated || !token) {
+				setCommentError("Sign in to manage your responses");
+				return;
+			}
+
+			const confirmed = window.confirm("Delete this response?");
+			if (!confirmed) {
+				return;
+			}
+
+			try {
+				setCommentError(null);
+				const response = await fetch(`${API_BASE_URL}/api/comments/${targetComment.id}`, {
+					method: "DELETE",
+					headers: {
+						Authorization: `Bearer ${token}`,
+					},
+				});
+
+				const payload = await response.json().catch(() => ({}));
+
+				if (!response.ok) {
+					throw new Error(payload?.error || "Unable to delete response");
+				}
+
+				setPost((previous) => {
+					if (!previous) {
+						return previous;
+					}
+					const nextCount = Math.max(0, (previous.responseCount || 1) - 1);
+					return { ...previous, responseCount: nextCount };
+				});
+
+				if (replyTargetId === targetComment.id) {
+					handleCancelReply();
+				}
+
+				await fetchComments();
+			} catch (deleteError) {
+				console.error(deleteError);
+				setCommentError(deleteError.message || "Failed to delete response");
+			}
+		},
+		[fetchComments, handleCancelReply, isAuthenticated, replyTargetId, token]
 	);
 
 	if (loading) {
@@ -679,7 +1048,9 @@ export default function PostView() {
 
 			<div className="post-content">
 				{Array.isArray(post.content) &&
-					post.content.map((block, index) => renderBlock(block, index))}
+					post.content.map((block, index) =>
+						renderBlock(block, index, renderCodeBlock)
+					)}
 			</div>
 
 			<PostTags tags={post.tags} />
@@ -709,7 +1080,20 @@ export default function PostView() {
 				{!commentsLoading && comments.length > 0 && (
 					<ul className="comment-thread">
 						{comments.map((comment) => (
-							<CommentItem key={comment?.id} comment={comment} />
+							<CommentItem
+								key={comment?.id || comment?._id}
+								comment={comment}
+								currentUserId={currentUserId}
+								replyTargetId={replyTargetId}
+								replyContent={replyContent}
+								onChangeReplyContent={setReplyContent}
+								onStartReply={handleStartReply}
+								onCancelReply={handleCancelReply}
+								onSubmitReply={handleSubmitReply}
+								replyError={replyError}
+								replySubmitting={replySubmitting}
+								onDelete={handleDeleteComment}
+							/>
 						))}
 					</ul>
 				)}

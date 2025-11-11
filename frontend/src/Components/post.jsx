@@ -87,6 +87,35 @@ const resolvePostId = (candidate = {}) => {
   return "";
 };
 
+const toComparableId = (value) => {
+  if (!value) {
+    return null;
+  }
+
+  if (typeof value === "string" || typeof value === "number") {
+    const stringValue = value.toString().trim();
+    return stringValue ? stringValue : null;
+  }
+
+  if (typeof value === "object" && typeof value.toString === "function") {
+    const stringValue = value.toString();
+    if (stringValue && stringValue !== "[object Object]") {
+      return stringValue.trim();
+    }
+  }
+
+  return null;
+};
+
+const toComparableUsername = (value) => {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed ? trimmed.toLowerCase() : null;
+};
+
 const Post = ({
   post,
   variant = "default",
@@ -94,8 +123,9 @@ const Post = ({
   onToggleSave,
   onShowLess,
   onActionFeedback,
+  canEdit = false,
 }) => {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const navigate = useNavigate();
   const [menuOpen, setMenuOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -103,7 +133,7 @@ const Post = ({
   const menuRef = useRef(null);
 
   const safePost = useMemo(() => post || {}, [post]);
-  const author = safePost.author || {};
+  const author = useMemo(() => safePost.author || {}, [safePost]);
 
   const displayTitle = safePost.title || "Untitled story";
   const displaySummary = pickSummary(safePost);
@@ -138,6 +168,44 @@ const Post = ({
   }, [targetPath]);
 
   const canNavigate = Boolean(targetPath);
+
+  const viewerOwnsPost = useMemo(() => {
+    if (!user) {
+      return false;
+    }
+
+    const viewerIds = [user.id, user._id, user.userId, user.uid]
+      .map(toComparableId)
+      .filter(Boolean);
+
+    const authorIds = [safePost.authorId, author?.id, author?._id]
+      .map(toComparableId)
+      .filter(Boolean);
+
+    if (viewerIds.length > 0 && authorIds.length > 0) {
+      const matches = authorIds.some((id) => viewerIds.includes(id));
+      if (matches) {
+        return true;
+      }
+    }
+
+    const viewerUsername =
+      toComparableUsername(user.username) ||
+      toComparableUsername(user.name) ||
+      toComparableUsername(user.email);
+    const authorUsername =
+      toComparableUsername(author.username) ||
+      toComparableUsername(author.name) ||
+      toComparableUsername(author.email);
+
+    if (viewerUsername && authorUsername && viewerUsername === authorUsername) {
+      return true;
+    }
+
+    return false;
+  }, [author, safePost, user]);
+
+  const allowEdit = Boolean(canEdit || viewerOwnsPost);
 
   const handleCardNavigate = useCallback(
     (event) => {
@@ -365,6 +433,34 @@ const Post = ({
     }
   }, [postId, token, onActionFeedback]);
 
+  const handleEditPost = useCallback(
+    (event) => {
+      event?.stopPropagation();
+      event?.preventDefault();
+
+      if (!allowEdit) {
+        setMenuOpen(false);
+        return;
+      }
+
+      if (!postId && !postSlug) {
+        onActionFeedback?.("Unable to open this story for editing.", "error");
+        setMenuOpen(false);
+        return;
+      }
+
+      setMenuOpen(false);
+      navigate("/write", {
+        state: {
+          mode: "edit",
+          postId: postId || postSlug,
+          postSlug,
+        },
+      });
+    },
+    [allowEdit, navigate, onActionFeedback, postId, postSlug]
+  );
+
   return (
     <article
       className={classList(
@@ -456,6 +552,16 @@ const Post = ({
                   role="menu"
                   onClick={(event) => event.stopPropagation()}
                 >
+                  {allowEdit && (
+                    <>
+                      <li role="presentation">
+                        <button type="button" role="menuitem" onClick={handleEditPost}>
+                          Edit story
+                        </button>
+                      </li>
+                      <li className="post-card__actions-menu-divider" role="separator" aria-hidden="true" />
+                    </>
+                  )}
                   <li role="presentation">
                     <button type="button" role="menuitem" onClick={handleCopyLink}>
                       Copy link

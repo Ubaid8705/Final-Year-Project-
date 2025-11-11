@@ -1,5 +1,4 @@
 body {
-    font-family: medium-content-serif-font, Georgia, Cambria, "Times New Roman", Times, serif;
-    /* for article text */
+    font-family: var(--font-sans);
 }
 

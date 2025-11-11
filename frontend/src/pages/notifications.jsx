@@ -66,6 +66,8 @@ const buildMessage = (notification) => {
       return `${actor} replied to your comment${title ? ` on${title}` : ""}`;
     case "follow":
       return `${actor} started following you`;
+    case "mention":
+      return `${actor} mentioned you${title ? ` in${title}` : ""}`;
     case "system":
     default:
       return `${actor} sent you an update`;

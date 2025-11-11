@@ -1,5 +1,6 @@
 import Notification from "../models/Notification.js";
 import { emitNotification, serializeNotification } from "../socket.js";
+import { normalizeObjectId } from "../utils/objectId.js";
 
 const SENDER_PROJECTION = "username name avatar";
 const POST_PROJECTION = "title slug coverImage";
@@ -14,19 +15,23 @@ export const createNotification = async ({
   message,
   metadata = {},
 }) => {
-  if (!recipient || !type) {
+  const recipientId = normalizeObjectId(recipient);
+  const senderId = normalizeObjectId(sender);
+  const postId = normalizeObjectId(post);
+
+  if (!recipientId || !type) {
     throw new Error("Notification recipient and type are required");
   }
 
-  if (sender && recipient.toString() === sender.toString()) {
+  if (senderId && recipientId.toString() === senderId.toString()) {
     return null;
   }
 
   const notification = await Notification.create({
-    recipient,
-    sender,
+    recipient: recipientId,
+    sender: senderId || undefined,
     type,
-    post,
+    post: postId || undefined,
     message,
     metadata,
   });
@@ -52,14 +57,24 @@ export const safeCreateNotification = async (payload) => {
 };
 
 export const markNotificationsRead = async (recipientId, notificationIds = []) => {
-  if (!recipientId) {
+  const normalizedRecipient = normalizeObjectId(recipientId);
+
+  if (!normalizedRecipient) {
     return { modifiedCount: 0 };
   }
 
-  const filter = { recipient: recipientId, isRead: false };
+  const filter = { recipient: normalizedRecipient, isRead: false };
 
   if (Array.isArray(notificationIds) && notificationIds.length > 0) {
-    filter._id = { $in: notificationIds };
+    const normalizedIds = notificationIds
+      .map((value) => normalizeObjectId(value))
+      .filter(Boolean);
+
+    if (normalizedIds.length === 0) {
+      return { modifiedCount: 0 };
+    }
+
+    filter._id = { $in: normalizedIds };
   }
 
   const result = await Notification.updateMany(filter, { $set: { isRead: true } });
@@ -72,9 +87,20 @@ export const loadNotifications = async ({
   limit = 20,
   cursor,
 }) => {
+  const recipientId = normalizeObjectId(recipient);
+
+  if (!recipientId) {
+    return {
+      items: [],
+      unreadCount: 0,
+      nextCursor: null,
+      hasMore: false,
+    };
+  }
+
   const numericLimit = Math.min(Math.max(Number(limit) || 20, 1), 50);
 
-  const query = { recipient };
+  const query = { recipient: recipientId };
   if (cursor) {
     const cursorDate = new Date(cursor);
     if (!Number.isNaN(cursorDate.getTime())) {
@@ -89,7 +115,7 @@ export const loadNotifications = async ({
     .populate({ path: "post", select: POST_PROJECTION })
     .lean();
 
-  const unreadCount = await Notification.countDocuments({ recipient, isRead: false });
+  const unreadCount = await Notification.countDocuments({ recipient: recipientId, isRead: false });
 
   const items = notifications.map(serializeNotification);
   const nextCursor = items.length === numericLimit ? items[items.length - 1].createdAt : null;
@@ -103,10 +129,12 @@ export const loadNotifications = async ({
 };
 
 export const deleteNotificationsForPost = async (postId) => {
-  if (!postId) {
+  const targetId = normalizeObjectId(postId);
+
+  if (!targetId) {
     return 0;
   }
 
-  const result = await Notification.deleteMany({ post: postId });
+  const result = await Notification.deleteMany({ post: targetId });
   return result.deletedCount || 0;
 };

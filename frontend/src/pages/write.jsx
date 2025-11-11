@@ -5,30 +5,23 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { EditorContent, useEditor } from "@tiptap/react";
 import { BubbleMenu } from "@tiptap/react/menus";
 import StarterKit from "@tiptap/starter-kit";
 import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
-import { createLowlight } from "lowlight";
-import javascript from "highlight.js/lib/languages/javascript";
-import python from "highlight.js/lib/languages/python";
-import xml from "highlight.js/lib/languages/xml";
-import cssLang from "highlight.js/lib/languages/css";
-import jsonLang from "highlight.js/lib/languages/json";
-import bash from "highlight.js/lib/languages/bash";
-import typescript from "highlight.js/lib/languages/typescript";
-import java from "highlight.js/lib/languages/java";
-import ruby from "highlight.js/lib/languages/ruby";
-import go from "highlight.js/lib/languages/go";
-import php from "highlight.js/lib/languages/php";
-import plaintext from "highlight.js/lib/languages/plaintext";
 import Link from "@tiptap/extension-link";
 import Image from "@tiptap/extension-image";
 import Youtube from "@tiptap/extension-youtube";
 import { useAuth } from "../contexts/AuthContext";
 import { API_BASE_URL } from "../config";
 import { uploadImage } from "../services/mediaService";
+import {
+  createCodeLowlight,
+  getCodeLanguageLabel,
+  normalizeCodeLanguage,
+  SUPPORTED_CODE_LANGUAGES,
+} from "../utils/codeHighlight";
 import "./write.css";
 
 const LinkIcon = (props) => (
@@ -317,7 +310,12 @@ const transformDocToContent = (doc) => {
       case "codeBlock": {
         const { text } = extractTextAndMarkups(node);
         if (text.trim()) {
-          blocks.push({ type: "CODE", codeBlock: text });
+          const language = normalizeCodeLanguage(node.attrs?.language);
+          blocks.push({
+            type: "CODE",
+            codeBlock: text,
+            codeLanguage: language || null,
+          });
         }
         break;
       }
@@ -332,6 +330,169 @@ const transformDocToContent = (doc) => {
   });
 
   return blocks;
+};
+
+const buildTextNodes = (text) => {
+  if (!text) {
+    return [];
+  }
+  return [{ type: "text", text }];
+};
+
+const buildParagraphNode = (text) => {
+  const content = buildTextNodes(text);
+  return content.length ? { type: "paragraph", content } : { type: "paragraph" };
+};
+
+const transformContentToDoc = (blocks = []) => {
+  if (!Array.isArray(blocks) || blocks.length === 0) {
+    return { type: "doc", content: [{ type: "paragraph" }] };
+  }
+
+  const docContent = [];
+
+  blocks.forEach((block) => {
+    if (!block || typeof block !== "object") {
+      return;
+    }
+
+    const rawType = block.type || "";
+    const type = rawType.toString().toUpperCase();
+
+    switch (type) {
+      case "H1":
+      case "H2":
+      case "H3": {
+        const level = type === "H1" ? 1 : type === "H2" ? 2 : 3;
+        const content = buildTextNodes(block.text);
+        docContent.push({
+          type: "heading",
+          attrs: { level },
+          content: content.length ? content : [{ type: "text", text: "" }],
+        });
+        break;
+      }
+      case "BQ":
+      case "BLOCKQUOTE": {
+        docContent.push({
+          type: "blockquote",
+          content: [buildParagraphNode(block.text || "")],
+        });
+        break;
+      }
+      case "IMG": {
+        const image = block.image || {};
+        const src =
+          image.displayUrl ||
+          image.url ||
+          image.originalUrl ||
+          image.thumbnailUrl ||
+          null;
+
+        if (src) {
+          const attrs = {
+            src,
+            alt: image.alt || "",
+            title: image.caption || "",
+          };
+          if (image.width) {
+            attrs.width = image.width;
+          }
+          if (image.height) {
+            attrs.height = image.height;
+          }
+          docContent.push({ type: "image", attrs });
+        }
+        break;
+      }
+      case "VIDEO": {
+        const video = block.video || {};
+        const url = video.url || "";
+        if (url && /youtube\.com|youtu\.be/.test(url)) {
+          docContent.push({ type: "youtube", attrs: { src: url } });
+        } else if (url) {
+          docContent.push(buildParagraphNode(url));
+        }
+        break;
+      }
+      case "CODE": {
+        const code = block.codeBlock || block.text || "";
+        const normalizedLanguage =
+          normalizeCodeLanguage(block.codeLanguage || block.language) ||
+          "plaintext";
+        docContent.push({
+          type: "codeBlock",
+          attrs: { language: normalizedLanguage },
+          content: [{ type: "text", text: code }],
+        });
+        break;
+      }
+      case "UL":
+      case "OL": {
+        const items = Array.isArray(block.items) ? block.items : [];
+        if (!items.length) {
+          break;
+        }
+        const listItems = items.map((item) => ({
+          type: "listItem",
+          content: [buildParagraphNode(item?.text || "")],
+        }));
+        docContent.push({
+          type: type === "OL" ? "orderedList" : "bulletList",
+          content: listItems,
+        });
+        break;
+      }
+      case "DIVIDER": {
+        docContent.push({ type: "horizontalRule" });
+        break;
+      }
+      default: {
+        docContent.push(buildParagraphNode(block.text || ""));
+        break;
+      }
+    }
+  });
+
+  if (docContent.length === 0) {
+    docContent.push({ type: "paragraph" });
+  }
+
+  return { type: "doc", content: docContent };
+};
+
+const normalizeCoverAssetFromPost = (post = {}) => {
+  const meta = post.coverImageMeta || {};
+  const hasMeta = meta && Object.keys(meta).length > 0;
+  const fallback = post.coverImage || null;
+
+  if (!hasMeta && !fallback) {
+    return null;
+  }
+
+  const displayUrl =
+    meta.displayUrl ||
+    fallback ||
+    meta.originalUrl ||
+    meta.thumbnailUrl ||
+    null;
+
+  if (!displayUrl) {
+    return null;
+  }
+
+  return {
+    ...meta,
+    displayUrl,
+    originalUrl: meta.originalUrl || fallback || displayUrl,
+    secureUrl: fallback || meta.secureUrl || displayUrl,
+    thumbnailUrl: meta.thumbnailUrl || null,
+    placeholderUrl: meta.placeholderUrl || null,
+    publicId: meta.publicId || null,
+    width: meta.width || null,
+    height: meta.height || null,
+    aspectRatio: meta.aspectRatio || null,
+  };
 };
 
 const shouldShowFloatingMenu = (editor, state) => {
@@ -367,7 +528,16 @@ const shouldShowFloatingMenu = (editor, state) => {
 
 const Write = ({ postId, authorId }) => {
   const navigate = useNavigate();
+  const location = useLocation();
+  const [searchParams] = useSearchParams();
   const { user, token } = useAuth();
+
+  const routeState = location.state || {};
+  const statePostId = routeState.postId || routeState.id || null;
+  const statePostSlug = routeState.postSlug || null;
+  const queryPostIdRaw = searchParams.get("postId") || searchParams.get("id");
+  const queryPostId = queryPostIdRaw ? queryPostIdRaw.trim() : null;
+  const initialPostIdentifier = postId || statePostId || queryPostId || statePostSlug || null;
 
   const [title, setTitle] = useState("");
   const [subtitle, setSubtitle] = useState("");
@@ -389,7 +559,9 @@ const Write = ({ postId, authorId }) => {
     left: 0,
     visible: false,
   });
-  const [draftMeta, setDraftMeta] = useState(() => ({ id: postId || null, slug: null }));
+  const [draftMeta, setDraftMeta] = useState(() => ({ id: initialPostIdentifier || null, slug: statePostSlug || null }));
+  const [bootstrapLoading, setBootstrapLoading] = useState(Boolean(initialPostIdentifier));
+  const [bootstrapError, setBootstrapError] = useState(null);
 
   const coverInputRef = useRef(null);
   const inlineImageInputRef = useRef(null);
@@ -399,6 +571,8 @@ const Write = ({ postId, authorId }) => {
   const floatingMenuRef = useRef(null);
   const saveInFlightRef = useRef(false);
   const pendingSaveRef = useRef(false);
+  const bootstrappingRef = useRef(Boolean(initialPostIdentifier));
+  const pendingDocRef = useRef(null);
 
   const displayName = user?.name || user?.username || "Your workspace";
 
@@ -534,6 +708,11 @@ const Write = ({ postId, authorId }) => {
       return;
     }
 
+    if (bootstrappingRef.current) {
+      setIsSaving(false);
+      return;
+    }
+
     if (saveInFlightRef.current) {
       pendingSaveRef.current = true;
       return;
@@ -595,7 +774,7 @@ const Write = ({ postId, authorId }) => {
   }, []);
 
   const scheduleAutoSave = useCallback(() => {
-    if (!editorRef.current || !token) {
+    if (!editorRef.current || !token || bootstrappingRef.current) {
       return;
     }
 
@@ -610,35 +789,16 @@ const Write = ({ postId, authorId }) => {
     }, 1200);
   }, [token, persistDraft]);
 
-  const codeSyntaxLowlight = useMemo(() => {
-    const instance = createLowlight();
+  const codeSyntaxLowlight = useMemo(() => createCodeLowlight(), []);
 
-    instance.register({
-      plaintext,
-      javascript,
-      typescript,
-      python,
-      java,
-      ruby,
-      go,
-      php,
-      xml,
-      css: cssLang,
-      json: jsonLang,
-      bash,
-    });
-
-    instance.registerAlias({
-      plaintext: ["text"],
-      javascript: ["js"],
-      typescript: ["ts"],
-      python: ["py"],
-      xml: ["html"],
-      bash: ["shell"],
-    });
-
-    return instance;
-  }, []);
+  const codeLanguageOptions = useMemo(
+    () =>
+      SUPPORTED_CODE_LANGUAGES.map((value) => ({
+        value,
+        label: getCodeLanguageLabel(value),
+      })),
+    []
+  );
 
   const editor = useEditor({
     extensions: [
@@ -668,6 +828,33 @@ const Write = ({ postId, authorId }) => {
     },
   });
 
+  const applyCodeBlockLanguageAttributes = useCallback(() => {
+    const editorInstance = editorRef.current;
+    if (!editorInstance || editorInstance.isDestroyed) {
+      return;
+    }
+
+    const { state, view } = editorInstance;
+    if (!state || !view) {
+      return;
+    }
+
+    state.doc.descendants((node, pos) => {
+      if (node.type?.name !== "codeBlock") {
+        return;
+      }
+
+      const dom = view.nodeDOM(pos);
+      if (!dom || !(dom instanceof HTMLElement)) {
+        return;
+      }
+
+      const normalizedLanguage =
+        normalizeCodeLanguage(node.attrs?.language) || "plaintext";
+      dom.setAttribute("data-language", normalizedLanguage);
+    });
+  }, []);
+
   useEffect(() => {
     editorRef.current = editor;
 
@@ -677,6 +864,21 @@ const Write = ({ postId, authorId }) => {
       }
     };
   }, [editor]);
+
+  useEffect(() => {
+    if (!editor) {
+      return;
+    }
+
+    if (pendingDocRef.current) {
+      const doc = pendingDocRef.current;
+      pendingDocRef.current = null;
+      editor.commands.setContent(doc, false);
+      editor.commands.focus("end");
+      setIsEditorEmpty(editor.isEmpty);
+      applyCodeBlockLanguageAttributes();
+    }
+  }, [editor, applyCodeBlockLanguageAttributes]);
 
   useEffect(() => {
     return () => {
@@ -847,6 +1049,113 @@ const Write = ({ postId, authorId }) => {
       window.removeEventListener("scroll", handleWindowChange, true);
     };
   }, [editor, updateFloatingMenuPosition]);
+
+  useEffect(() => {
+    if (!editor) {
+      return undefined;
+    }
+
+    const applyLanguageAttributes = () => {
+      applyCodeBlockLanguageAttributes();
+    };
+
+    editor.on("create", applyLanguageAttributes);
+    editor.on("update", applyLanguageAttributes);
+    editor.on("selectionUpdate", applyLanguageAttributes);
+    applyLanguageAttributes();
+
+    return () => {
+      editor.off("create", applyLanguageAttributes);
+      editor.off("update", applyLanguageAttributes);
+      editor.off("selectionUpdate", applyLanguageAttributes);
+    };
+  }, [editor, applyCodeBlockLanguageAttributes]);
+
+  useEffect(() => {
+    if (!initialPostIdentifier) {
+      bootstrappingRef.current = false;
+      setBootstrapLoading(false);
+      setBootstrapError(null);
+      return;
+    }
+
+    if (!token) {
+      setBootstrapLoading(true);
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadExistingPost = async () => {
+      bootstrappingRef.current = true;
+      setBootstrapLoading(true);
+      setBootstrapError(null);
+
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/posts/${initialPostIdentifier}`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        const data = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+          throw new Error(data.error || "Failed to load story.");
+        }
+
+        if (cancelled) {
+          return;
+        }
+
+        setTitle(data.title || "");
+        setSubtitle(data.subtitle || "");
+        setTags(Array.isArray(data.tags) ? data.tags : []);
+        setTagInput("");
+        setDraftMeta({
+          id: data.id || data._id || initialPostIdentifier,
+          slug: data.slug || statePostSlug || null,
+        });
+
+        setCoverAsset(normalizeCoverAssetFromPost(data));
+        setCoverUploadState({ loading: false, error: null });
+
+        const doc = transformContentToDoc(data.content);
+        const editorInstance = editorRef.current;
+        if (editorInstance) {
+          editorInstance.commands.setContent(doc, false);
+          editorInstance.commands.focus("end");
+          setIsEditorEmpty(editorInstance.isEmpty);
+          applyCodeBlockLanguageAttributes();
+        } else {
+          pendingDocRef.current = doc;
+        }
+
+        setLastSavedAt(
+          data.updatedAt ? new Date(data.updatedAt).getTime() : Date.now()
+        );
+        setSaveError(null);
+        setBootstrapError(null);
+      } catch (error) {
+        if (cancelled) {
+          return;
+        }
+        setBootstrapError(error.message || "Failed to load story.");
+      } finally {
+        if (!cancelled) {
+          bootstrappingRef.current = false;
+          setBootstrapLoading(false);
+          setIsSaving(false);
+        }
+      }
+    };
+
+    loadExistingPost();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [initialPostIdentifier, statePostSlug, token, applyCodeBlockLanguageAttributes]);
 
   const handleTitleChange = (event) => {
     setTitle(event.target.value);
@@ -1020,9 +1329,15 @@ const Write = ({ postId, authorId }) => {
     }
   }, [token, waitForActiveSave, buildPayload, sendPostPayload, draftMeta, navigate, persistDraft]);
 
-  const headerStatus = isSaving
-    ? "Saving..."
-    : formatRelativeTimestamp(lastSavedAt);
+  const headerStatus = useMemo(() => {
+    if (bootstrapLoading) {
+      return "Loading story…";
+    }
+    if (isSaving) {
+      return "Saving…";
+    }
+    return formatRelativeTimestamp(lastSavedAt);
+  }, [bootstrapLoading, isSaving, lastSavedAt]);
 
   const insertImageAsset = useCallback(
     async (asset) => {
@@ -1287,6 +1602,38 @@ const Write = ({ postId, authorId }) => {
     toggleOrderedList,
   ]);
 
+  const bubbleMenuShouldShow = useCallback(({ editor: activeEditor, view }) => {
+    if (!activeEditor || activeEditor.isDestroyed) {
+      return false;
+    }
+
+    const editorView = view || activeEditor.view;
+    if (!editorView || !editorView.dom) {
+      return false;
+    }
+
+    if (!editorView.docView || typeof editorView.docView.domFromPos !== "function") {
+      return false;
+    }
+
+    const { state } = activeEditor;
+    if (!state || !state.selection) {
+      return false;
+    }
+
+    const { from, to } = state.selection;
+    if (from === to) {
+      return false;
+    }
+
+    const docSize = state.doc?.content?.size ?? 0;
+    if (docSize <= 0 || from < 0 || to < 0 || from > docSize || to > docSize) {
+      return false;
+    }
+
+    return typeof editorView.hasFocus === "function" ? editorView.hasFocus() : true;
+  }, []);
+
   return (
     <div className="write-page">
       <header className="write-header">
@@ -1303,6 +1650,11 @@ const Write = ({ postId, authorId }) => {
             <span>
               Draft in {displayName} — {headerStatus}
             </span>
+            {bootstrapError && (
+              <span className="write-header__state-message" role="alert">
+                {bootstrapError}
+              </span>
+            )}
             {saveError && (
               <span className="write-header__state-message" role="alert">
                 {saveError}
@@ -1322,7 +1674,7 @@ const Write = ({ postId, authorId }) => {
             type="button"
             className="write-header__btn write-header__btn--primary"
             onClick={handlePublish}
-            disabled={isPublishing}
+            disabled={isPublishing || bootstrapLoading}
           >
             {isPublishing ? "Publishing…" : "Publish"}
           </button>
@@ -1695,8 +2047,14 @@ const Write = ({ postId, authorId }) => {
               aria-hidden="true"
             />
 
-            {editor && bubbleMenuItems.length > 0 && (
-              <BubbleMenu editor={editor} tippyOptions={{ duration: 120 }}>
+            {editor && !editor.isDestroyed && editor.view && editor.view.docView &&
+              typeof editor.view.docView.domFromPos === "function" &&
+              bubbleMenuItems.length > 0 && (
+              <BubbleMenu
+                editor={editor}
+                shouldShow={bubbleMenuShouldShow}
+                tippyOptions={{ duration: 120 }}
+              >
                 <div className="write-bubble">
                   {bubbleMenuItems.map((item) => {
                     if (item.type === "divider") {
@@ -1729,68 +2087,69 @@ const Write = ({ postId, authorId }) => {
                       </button>
                     );
                   })}
-                  {editor.isActive("codeBlock") && (
-                    <div className="write-code-toolbar">
-                      <select
-                        className="write-code-lang"
-                        value={editor.getAttributes("codeBlock").language || "plaintext"}
-                        onChange={(e) =>
-                          editor
-                            .chain()
-                            .focus()
-                            .updateAttributes("codeBlock", { language: e.target.value })
-                            .run()
-                        }
-                      >
-                        {[
-                          { value: "plaintext", label: "Plain Text" },
-                          { value: "javascript", label: "JavaScript" },
-                          { value: "typescript", label: "TypeScript" },
-                          { value: "python", label: "Python" },
-                          { value: "java", label: "Java" },
-                          { value: "go", label: "Go" },
-                          { value: "php", label: "PHP" },
-                          { value: "ruby", label: "Ruby" },
-                          { value: "html", label: "HTML" },
-                          { value: "css", label: "CSS" },
-                          { value: "json", label: "JSON" },
-                          { value: "bash", label: "Shell" },
-                        ].map((lang) => (
-                          <option key={lang.value} value={lang.value}>
-                            {lang.label}
-                          </option>
-                        ))}
-                      </select>
-                      <button
-                        type="button"
-                        className="write-code-copy"
-                        onMouseDown={(event) => event.preventDefault()}
-                        onClick={() => {
-                          const { $from } = editor.state.selection;
-                          let depth = $from.depth;
-                          let codeBlockNode = null;
+                  {editor.isActive("codeBlock") &&
+                    (() => {
+                      const activeCodeLanguage =
+                        normalizeCodeLanguage(
+                          editor.getAttributes("codeBlock").language
+                        ) || "plaintext";
 
-                          while (depth > 0) {
-                            const nodeAtDepth = $from.node(depth);
-                            if (nodeAtDepth?.type?.name === "codeBlock") {
-                              codeBlockNode = nodeAtDepth;
-                              break;
-                            }
-                            depth -= 1;
-                          }
+                      return (
+                        <div className="write-code-toolbar">
+                          <select
+                            className="write-code-lang"
+                            value={activeCodeLanguage}
+                            onChange={(event) => {
+                              const nextLanguage =
+                                normalizeCodeLanguage(event.target.value) ||
+                                "plaintext";
+                              editor
+                                .chain()
+                                .focus()
+                                .updateAttributes("codeBlock", {
+                                  language: nextLanguage,
+                                })
+                                .run();
+                              scheduleAutoSave();
+                            }}
+                          >
+                            {codeLanguageOptions.map((lang) => (
+                              <option key={lang.value} value={lang.value}>
+                                {lang.label}
+                              </option>
+                            ))}
+                          </select>
+                          <button
+                            type="button"
+                            className="write-code-copy"
+                            onMouseDown={(event) => event.preventDefault()}
+                            onClick={() => {
+                              const { $from } = editor.state.selection;
+                              let depth = $from.depth;
+                              let codeBlockNode = null;
 
-                          const text = codeBlockNode?.textContent || "";
-                          if (!text.trim()) {
-                            return;
-                          }
-                          navigator.clipboard.writeText(text).catch(() => {});
-                        }}
-                        aria-label="Copy code"
-                      >
-                        Copy
-                      </button>
-                    </div>
-                  )}
+                              while (depth > 0) {
+                                const nodeAtDepth = $from.node(depth);
+                                if (nodeAtDepth?.type?.name === "codeBlock") {
+                                  codeBlockNode = nodeAtDepth;
+                                  break;
+                                }
+                                depth -= 1;
+                              }
+
+                              const text = codeBlockNode?.textContent || "";
+                              if (!text.trim()) {
+                                return;
+                              }
+                              navigator.clipboard.writeText(text).catch(() => {});
+                            }}
+                            aria-label="Copy code"
+                          >
+                            Copy
+                          </button>
+                        </div>
+                      );
+                    })()}
                 </div>
               </BubbleMenu>
             )}

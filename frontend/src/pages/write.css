@@ -282,7 +282,7 @@
     background: transparent;
     resize: none;
     width: 100%;
-    font-family: "Georgia", Cambria, "Times New Roman", Times, serif;
+    font-family: var(--font-serif);
     outline: none;
     color: #111111;
 }
@@ -291,6 +291,7 @@
     font-size: clamp(2.1rem, 1.4rem + 1.5vw, 3rem);
     line-height: 1.1;
     font-weight: 700;
+    font-family: var(--font-display);
 }
 
 .write-subtitle {
@@ -506,14 +507,14 @@
     font-size: 1.15rem;
     line-height: 1.8;
     color: #1c1c1c;
-    font-family: "Georgia", Cambria, "Times New Roman", Times, serif;
+    font-family: var(--font-serif);
 }
 
 .write-editor__content .ProseMirror code {
     background: rgba(17, 17, 17, 0.06);
     padding: 2px 6px;
     border-radius: 6px;
-    font-family: "Fira Code", "Source Code Pro", "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace;
+    font-family: var(--font-mono);
 }
 
 .write-editor__content .ProseMirror pre {
@@ -524,7 +525,7 @@
     background: #f7f7f7;
     color: #111111;
     border: 1px solid rgba(17, 17, 17, 0.08);
-    font-family: "Fira Code", "Source Code Pro", "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace;
+    font-family: var(--font-mono);
     font-size: 0.96rem;
     line-height: 1.7;
     box-shadow: 0 20px 45px -40px rgba(17, 17, 17, 0.8);
@@ -624,7 +625,7 @@
 .write-editor__content .ProseMirror h1,
 .write-editor__content .ProseMirror h2,
 .write-editor__content .ProseMirror h3 {
-    font-family: "GT Super Text", "Georgia", Cambria, "Times New Roman", Times, serif;
+    font-family: var(--font-display);
     margin: 1.6em 0 0.8em;
     font-weight: 700;
     color: #111111;
@@ -694,17 +695,17 @@
 }
 
 .write-bubble__button--heading span {
-    font-family: "GT Super Text", "Georgia", Cambria, "Times New Roman", Times, serif;
+    font-family: var(--font-display);
     font-size: 1.05rem;
 }
 
 .write-bubble__button--quote span {
-    font-family: "GT Super Text", "Georgia", Cambria, "Times New Roman", Times, serif;
+    font-family: var(--font-display);
     font-size: 1.05rem;
 }
 
 .write-bubble__button--code span {
-    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace;
+    font-family: var(--font-mono);
     font-size: 0.85rem;
     font-weight: 500;
 }
@@ -809,6 +810,7 @@
     outline: none;
     font-size: 0.92rem;
     background: transparent;
+    font-family: inherit;
 }
 
 .write-tags__input::placeholder {

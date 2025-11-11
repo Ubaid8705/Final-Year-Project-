@@ -12,8 +12,35 @@ import { useAuth } from "./AuthContext";
 
 const SocketContext = createContext(null);
 
-const SOCKET_URL = process.env.REACT_APP_SOCKET_URL || API_BASE_URL;
 const DEFAULT_PAGE_SIZE = 20;
+
+const resolveSocketUrl = () => {
+  const explicit = process.env.REACT_APP_SOCKET_URL;
+  if (explicit) {
+    return explicit;
+  }
+
+  try {
+    const parsed = new URL(API_BASE_URL);
+    return parsed.origin;
+  } catch (error) {
+    const trimmed = API_BASE_URL.replace(/\/$/, "");
+    return trimmed.replace(/\/api$/, "");
+  }
+};
+
+const buildEndpoint = (path) => {
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  try {
+    return new URL(normalizedPath, API_BASE_URL).toString();
+  } catch (error) {
+    const trimmed = API_BASE_URL.replace(/\/$/, "");
+    return `${trimmed}${normalizedPath}`;
+  }
+};
+
+const SOCKET_URL = resolveSocketUrl();
+const NOTIFICATIONS_ENDPOINT = buildEndpoint("/api/notifications");
 
 const dedupeNotifications = (existing, incoming, append) => {
   const lookup = new Map();
@@ -61,6 +88,8 @@ export const SocketProvider = ({ children }) => {
   const [nextCursor, setNextCursor] = useState(null);
   const [hasMore, setHasMore] = useState(false);
 
+  const userId = user?._id || user?.id || null;
+
   const clearState = useCallback(() => {
     setNotifications([]);
     setUnreadCount(0);
@@ -86,7 +115,7 @@ export const SocketProvider = ({ children }) => {
           params.set("cursor", cursor);
         }
 
-        const response = await fetch(`${API_BASE_URL}/notifications?${params.toString()}`, {
+        const response = await fetch(`${NOTIFICATIONS_ENDPOINT}?${params.toString()}`, {
           headers: {
             Authorization: `Bearer ${token}`,
           },
@@ -119,7 +148,7 @@ export const SocketProvider = ({ children }) => {
   );
 
   useEffect(() => {
-    if (!token || !user?._id) {
+    if (!token || !userId) {
       setSocket((current) => {
         if (current) {
           current.disconnect();
@@ -139,7 +168,7 @@ export const SocketProvider = ({ children }) => {
     });
 
     client.on("connect", () => {
-      client.emit("register", String(user._id));
+      client.emit("register", String(userId));
     });
 
     client.on("notifications:new", (notification) => {
@@ -171,7 +200,7 @@ export const SocketProvider = ({ children }) => {
     return () => {
       client.disconnect();
     };
-  }, [token, user?._id, fetchNotifications, clearState]);
+  }, [token, userId, fetchNotifications, clearState]);
 
   const markAsRead = useCallback(
     async (notificationId) => {
@@ -194,7 +223,7 @@ export const SocketProvider = ({ children }) => {
       }
 
       try {
-        const response = await fetch(`${API_BASE_URL}/notifications/${notificationId}/read`, {
+        const response = await fetch(`${NOTIFICATIONS_ENDPOINT}/${notificationId}/read`, {
           method: "PATCH",
           headers: {
             Authorization: `Bearer ${token}`,
@@ -237,7 +266,7 @@ export const SocketProvider = ({ children }) => {
     }
 
     try {
-      const response = await fetch(`${API_BASE_URL}/notifications/read-all`, {
+      const response = await fetch(`${NOTIFICATIONS_ENDPOINT}/read-all`, {
         method: "PATCH",
         headers: {
           Authorization: `Bearer ${token}`,

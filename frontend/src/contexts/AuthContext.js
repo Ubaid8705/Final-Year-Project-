@@ -55,6 +55,13 @@ const normalizeUser = (user) => {
   normalized.avatar = deriveAvatar(normalized);
   normalized.topics = normalizeTopicsList(normalized.topics);
 
+  const referenceId = normalized._id || normalized.id;
+  if (referenceId) {
+    const idValue = referenceId.toString ? referenceId.toString() : referenceId;
+    normalized._id = idValue;
+    normalized.id = idValue;
+  }
+
   if (!normalized.name && normalized.username) {
     normalized.name = normalized.username;
   }

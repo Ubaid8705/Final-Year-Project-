@@ -69,6 +69,7 @@ const ContentBlockSchema = new mongoose.Schema(
     },
     items: [ListItemSchema],
     codeBlock: { type: String },
+    codeLanguage: { type: String, trim: true },
   },
   { _id: false }
 );
