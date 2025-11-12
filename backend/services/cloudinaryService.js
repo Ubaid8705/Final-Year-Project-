@@ -201,4 +201,29 @@ export const mapUploadResultToAsset = (result, overrides = {}) => {
   };
 };
 
+export const deleteAssetByPublicId = async (publicId, options = {}) => {
+  const trimmed = typeof publicId === "string" ? publicId.trim() : "";
+
+  if (!trimmed) {
+    return { success: false, reason: "missing-public-id" };
+  }
+
+  try {
+    ensureConfigured();
+  } catch (error) {
+    return { success: false, reason: "not-configured", error };
+  }
+
+  try {
+    const result = await cloudinary.uploader.destroy(trimmed, {
+      invalidate: true,
+      ...options,
+    });
+    return { success: true, result };
+  } catch (error) {
+    console.warn("Failed to delete Cloudinary asset", { publicId: trimmed, error });
+    return { success: false, error };
+  }
+};
+
 export default cloudinary;

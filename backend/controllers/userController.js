@@ -1,6 +1,7 @@
 import User from "../models/User.js";
 import Relationship from "../models/Relationship.js";
 import UserSettings from "../models/Settings.js";
+import { deleteAssetByPublicId } from "../services/cloudinaryService.js";
 import {
   RELATIONSHIP_STATUS,
   getFollowStatsForUser,
@@ -9,9 +10,9 @@ import {
 } from "../services/relationshipService.js";
 
 const OWN_USER_PROJECTION =
-  "username name email avatar bio pronouns topics topicsUpdatedAt hasSubdomain customDomainState membershipStatus createdAt updatedAt";
+  "username name email avatar coverImage bio pronouns topics topicsUpdatedAt hasSubdomain customDomainState membershipStatus createdAt updatedAt";
 const PUBLIC_USER_PROJECTION =
-  "username name avatar bio pronouns membershipStatus topics createdAt updatedAt";
+  "username name avatar coverImage bio pronouns membershipStatus topics createdAt updatedAt";
 
 const MAX_TOPIC_COUNT = 12;
 
@@ -55,6 +56,148 @@ const sanitizeTopicsInput = (topics) => {
   return unique.slice(0, MAX_TOPIC_COUNT);
 };
 
+const toTrimmedString = (value) => {
+  if (typeof value !== "string") {
+    return "";
+  }
+  return value.trim();
+};
+
+const sanitizeImageAsset = (imageDoc) => {
+  if (!imageDoc) {
+    return null;
+  }
+
+  const source = imageDoc.toObject ? imageDoc.toObject({ getters: true }) : imageDoc;
+
+  const url = toTrimmedString(source.url);
+  const secureUrl = toTrimmedString(source.secureUrl);
+  const originalUrl = toTrimmedString(source.originalUrl);
+  const thumbnailUrl = toTrimmedString(source.thumbnailUrl);
+  const placeholderUrl = toTrimmedString(source.placeholderUrl);
+  const publicId = toTrimmedString(source.publicId);
+
+  const primary = secureUrl || url || originalUrl || thumbnailUrl;
+
+  if (!primary && !placeholderUrl) {
+    return null;
+  }
+
+  const payload = {
+    url: primary || placeholderUrl || null,
+    secureUrl: secureUrl || primary || placeholderUrl || null,
+    originalUrl: originalUrl || secureUrl || primary || null,
+    thumbnailUrl: thumbnailUrl || null,
+    placeholderUrl: placeholderUrl || null,
+    publicId: publicId || null,
+  };
+
+  const uploadedRaw = source.uploadedAt || source.uploaded_at;
+  if (uploadedRaw) {
+    const uploadedAt = new Date(uploadedRaw);
+    if (!Number.isNaN(uploadedAt.getTime())) {
+      payload.uploadedAt = uploadedAt.toISOString();
+    }
+  }
+
+  return payload;
+};
+
+const sanitizeCoverImageInput = (input) => {
+  if (input === null || typeof input === "undefined" || input === "") {
+    return { value: null };
+  }
+
+  if (typeof input !== "object") {
+    return { error: "Invalid cover image payload." };
+  }
+
+  const pick = (key) => {
+    const candidate = input[key];
+    if (typeof candidate === "string") {
+      const trimmed = candidate.trim();
+      return trimmed || null;
+    }
+    return null;
+  };
+
+  const url = pick("url") || pick("displayUrl");
+  const secureUrl = pick("secureUrl");
+  const originalUrl = pick("originalUrl");
+  const thumbnailUrl = pick("thumbnailUrl");
+  const placeholderUrl = pick("placeholderUrl");
+  const publicId = pick("publicId");
+
+  const primary = secureUrl || url || originalUrl || thumbnailUrl;
+
+  if (!primary) {
+    return { error: "Cover image is missing a valid URL." };
+  }
+
+  const payload = {
+    url: url || secureUrl || originalUrl || thumbnailUrl,
+    secureUrl: secureUrl || url || originalUrl || thumbnailUrl,
+    originalUrl: originalUrl || secureUrl || url || thumbnailUrl,
+    thumbnailUrl: thumbnailUrl || undefined,
+    placeholderUrl: placeholderUrl || undefined,
+    publicId: publicId || undefined,
+  };
+
+  const uploadedRaw = input.uploadedAt || input.uploaded_at;
+  if (uploadedRaw) {
+    const uploadedAt = new Date(uploadedRaw);
+    if (!Number.isNaN(uploadedAt.getTime())) {
+      payload.uploadedAt = uploadedAt;
+    }
+  }
+
+  const normalized = Object.entries(payload).reduce((acc, [key, value]) => {
+    if (value !== undefined && value !== null && value !== "") {
+      acc[key] = value;
+    }
+    return acc;
+  }, {});
+
+  if (!normalized.url) {
+    normalized.url = primary;
+  }
+
+  if (!normalized.secureUrl) {
+    normalized.secureUrl = normalized.url;
+  }
+
+  if (!normalized.originalUrl) {
+    normalized.originalUrl = normalized.secureUrl;
+  }
+
+  return { value: normalized };
+};
+
+const sanitizePronounsInput = (pronouns) => {
+  if (!pronouns) {
+    return [];
+  }
+
+  const sourceList = Array.isArray(pronouns) ? pronouns : [pronouns];
+  const unique = [];
+
+  sourceList.forEach((item) => {
+    const sanitized = toTrimmedString(item);
+    if (!sanitized) {
+      return;
+    }
+    if (sanitized.length > 24) {
+      return;
+    }
+    const lower = sanitized.toLowerCase();
+    if (!unique.some((existing) => existing.toLowerCase() === lower)) {
+      unique.push(sanitized);
+    }
+  });
+
+  return unique.slice(0, 4);
+};
+
 const sanitizeOwnUser = (userDoc) => {
   if (!userDoc) {
     return null;
@@ -68,6 +211,7 @@ const sanitizeOwnUser = (userDoc) => {
     name: source.name,
     email: source.email,
     avatar: source.avatar,
+    coverImage: sanitizeImageAsset(source.coverImage),
     bio: source.bio,
     pronouns: source.pronouns,
     topics: Array.isArray(source.topics) ? source.topics : [],
@@ -92,6 +236,7 @@ const sanitizePublicUser = (userDoc) => {
     username: source.username,
     name: source.name,
     avatar: source.avatar,
+    coverImage: sanitizeImageAsset(source.coverImage),
     bio: source.bio,
     pronouns: source.pronouns,
     topics: Array.isArray(source.topics) ? source.topics : [],
@@ -155,29 +300,90 @@ export const updateUser = async (req, res) => {
       "topics",
       "hasSubdomain",
       "customDomainState",
+      "coverImage",
     ];
 
-    const updates = Object.keys(req.body)
+    const sourceBody = req.body && typeof req.body === "object" ? req.body : {};
+    const updates = Object.keys(sourceBody)
       .filter((key) => allowedUpdates.includes(key))
       .reduce((obj, key) => {
-        obj[key] = req.body[key];
+        obj[key] = sourceBody[key];
         return obj;
       }, {});
 
-    if (Object.prototype.hasOwnProperty.call(updates, "topics")) {
-      const sanitizedTopics = sanitizeTopicsInput(updates.topics);
-      updates.topics = sanitizedTopics;
-      updates.topicsUpdatedAt = sanitizedTopics.length ? new Date() : null;
-    }
-
-    const user = await User.findByIdAndUpdate(
-      req.user._id,
-      { $set: updates },
-      { new: true, runValidators: true }
-    ).select(OWN_USER_PROJECTION);
+    const user = await User.findById(req.user._id);
 
     if (!user) {
       return res.status(404).json({ error: "User not found" });
+    }
+
+    let coverImageToDelete = null;
+
+    if (Object.prototype.hasOwnProperty.call(updates, "topics")) {
+      const sanitizedTopics = sanitizeTopicsInput(updates.topics);
+      user.topics = sanitizedTopics;
+      user.topicsUpdatedAt = sanitizedTopics.length ? new Date() : null;
+      user.markModified("topics");
+    }
+
+    if (Object.prototype.hasOwnProperty.call(updates, "pronouns")) {
+      const sanitizedPronouns = sanitizePronounsInput(updates.pronouns);
+      user.pronouns = sanitizedPronouns;
+      user.markModified("pronouns");
+    }
+
+    if (Object.prototype.hasOwnProperty.call(updates, "coverImage")) {
+      const { value: nextCover, error: coverError } = sanitizeCoverImageInput(updates.coverImage);
+      if (coverError) {
+        return res.status(400).json({ error: coverError });
+      }
+
+      const currentCover = user.coverImage;
+
+      if (!nextCover) {
+        if (currentCover?.publicId) {
+          coverImageToDelete = currentCover.publicId;
+        }
+        user.coverImage = null;
+      } else {
+        if (currentCover?.publicId) {
+          if (!nextCover.publicId || currentCover.publicId !== nextCover.publicId) {
+            coverImageToDelete = currentCover.publicId;
+          }
+        }
+        user.coverImage = nextCover;
+      }
+
+      user.markModified("coverImage");
+    }
+
+    const directKeys = [
+      "username",
+      "name",
+      "email",
+      "avatar",
+      "bio",
+      "hasSubdomain",
+      "customDomainState",
+    ];
+
+    directKeys.forEach((key) => {
+      if (Object.prototype.hasOwnProperty.call(updates, key)) {
+        const value = updates[key];
+        user[key] = typeof value === "string" ? value.trim() : value;
+      }
+    });
+
+    await user.save({ validateBeforeSave: true });
+
+    if (coverImageToDelete) {
+      const cleanupResult = await deleteAssetByPublicId(coverImageToDelete);
+      if (!cleanupResult.success) {
+        console.warn(
+          "Unable to remove previous cover image",
+          cleanupResult.error || cleanupResult.reason || "unknown-error"
+        );
+      }
     }
 
     res.json({ user: sanitizeOwnUser(user) });

@@ -11,6 +11,76 @@ const COVER_FALLBACK =
 const buildFallbackAvatar = (seed) =>
   `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(seed || "Reader")}`;
 
+const sanitizeUrlCandidate = (value) =>
+  typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+
+const resolveCoverDetails = (cover) => {
+  if (!cover) {
+    return { url: null, placeholder: null, publicId: null };
+  }
+
+  if (typeof cover === "string") {
+    const url = sanitizeUrlCandidate(cover);
+    return { url, placeholder: null, publicId: null };
+  }
+
+  if (typeof cover === "object") {
+    const url = [cover.secureUrl, cover.url, cover.originalUrl, cover.thumbnailUrl]
+      .map(sanitizeUrlCandidate)
+      .find(Boolean) || null;
+
+    return {
+      url,
+      placeholder: sanitizeUrlCandidate(cover.placeholderUrl),
+      publicId: sanitizeUrlCandidate(cover.publicId),
+    };
+  }
+
+  return { url: null, placeholder: null, publicId: null };
+};
+
+const buildCoverUpdatePayload = (asset) => {
+  if (!asset || typeof asset !== "object") {
+    return null;
+  }
+
+  const displayUrl = sanitizeUrlCandidate(asset.displayUrl || asset.url);
+  const secureUrl = sanitizeUrlCandidate(asset.secureUrl);
+  const originalUrl = sanitizeUrlCandidate(asset.originalUrl);
+  const thumbnailUrl = sanitizeUrlCandidate(asset.thumbnailUrl);
+  const placeholderUrl = sanitizeUrlCandidate(asset.placeholderUrl);
+  const publicId = sanitizeUrlCandidate(asset.publicId);
+
+  const primary = secureUrl || displayUrl || originalUrl || thumbnailUrl;
+
+  if (!primary) {
+    return null;
+  }
+
+  const payload = {
+    url: displayUrl || secureUrl || originalUrl || thumbnailUrl,
+    secureUrl: secureUrl || displayUrl || originalUrl || thumbnailUrl,
+    originalUrl: originalUrl || secureUrl || displayUrl || thumbnailUrl,
+  };
+
+  if (thumbnailUrl) {
+    payload.thumbnailUrl = thumbnailUrl;
+  }
+  if (placeholderUrl) {
+    payload.placeholderUrl = placeholderUrl;
+  }
+  if (publicId) {
+    payload.publicId = publicId;
+  }
+
+  const uploadedAt = asset.uploadedAt ? new Date(asset.uploadedAt) : null;
+  if (uploadedAt && !Number.isNaN(uploadedAt.getTime())) {
+    payload.uploadedAt = uploadedAt.toISOString();
+  }
+
+  return payload;
+};
+
 const OWN_PERMISSIONS = Object.freeze({
   canViewProfile: true,
   canViewPosts: true,
@@ -135,6 +205,7 @@ const Profile = () => {
   const [editError, setEditError] = useState(null);
   const [editSaving, setEditSaving] = useState(false);
   const [avatarUploading, setAvatarUploading] = useState(false);
+  const [coverUpdating, setCoverUpdating] = useState(false);
   const [bioWordCount, setBioWordCount] = useState(0);
   const [bioLimitReached, setBioLimitReached] = useState(false);
 
@@ -299,6 +370,7 @@ const Profile = () => {
     },
     [token, updateEditForm]
   );
+
 
   const handleEditFieldChange = useCallback(
     (field) => (event) => {
@@ -516,6 +588,136 @@ const Profile = () => {
       setLoadingProfile(false);
     }
   }, [token, profileUsername, viewingOwnProfile, normalizePermissions]);
+
+  const handleCoverUpload = useCallback(
+    async (event) => {
+      const file = event?.target?.files?.[0];
+      if (!file) {
+        return;
+      }
+
+      if (!viewingOwnProfile) {
+        return;
+      }
+
+      if (!token) {
+        handleCardFeedback("Sign in to update your cover image.", "error");
+        return;
+      }
+
+      setCoverUpdating(true);
+
+      try {
+        const asset = await mediaService.uploadImage({
+          file,
+          token,
+          purpose: "cover",
+        });
+
+        const coverPayload = buildCoverUpdatePayload(asset);
+        if (!coverPayload) {
+          throw new Error("Upload response is missing cover metadata.");
+        }
+
+        const response = await fetch(`${API_BASE_URL}/api/users/update`, {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ coverImage: coverPayload }),
+        });
+
+        const data = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+          throw new Error(data.error || "Failed to update cover image.");
+        }
+
+        if (data.user) {
+          setProfile(data.user);
+          if (typeof updateStoredUser === "function") {
+            updateStoredUser(data.user);
+          }
+        } else {
+          await fetchProfile();
+        }
+
+        handleCardFeedback("Cover image updated.", "success");
+      } catch (error) {
+        console.error(error);
+        handleCardFeedback(error.message || "Failed to update cover image.", "error");
+      } finally {
+        setCoverUpdating(false);
+        if (event?.target) {
+          event.target.value = "";
+        }
+      }
+    },
+    [fetchProfile, handleCardFeedback, setProfile, token, updateStoredUser, viewingOwnProfile]
+  );
+
+  const handleCoverRemove = useCallback(async () => {
+    if (!viewingOwnProfile || coverUpdating) {
+      return;
+    }
+
+    const ownsCustomCover = Boolean(resolveCoverDetails(profile?.coverImage).url);
+
+    if (!ownsCustomCover) {
+      handleCardFeedback("You haven't added a cover image yet.", "info");
+      return;
+    }
+
+    if (!token) {
+      handleCardFeedback("Sign in to update your cover image.", "error");
+      return;
+    }
+
+    const confirmed =
+      typeof window !== "undefined"
+        ? window.confirm("Remove your cover image?")
+        : true;
+
+    if (!confirmed) {
+      return;
+    }
+
+    setCoverUpdating(true);
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/users/update`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ coverImage: null }),
+      });
+
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to remove cover image.");
+      }
+
+      if (data.user) {
+        setProfile(data.user);
+        if (typeof updateStoredUser === "function") {
+          updateStoredUser(data.user);
+        }
+      } else {
+        await fetchProfile();
+      }
+
+      handleCardFeedback("Cover image removed.", "success");
+    } catch (error) {
+      console.error(error);
+      handleCardFeedback(error.message || "Failed to remove cover image.", "error");
+    } finally {
+      setCoverUpdating(false);
+    }
+  }, [coverUpdating, fetchProfile, handleCardFeedback, profile, setProfile, token, updateStoredUser, viewingOwnProfile]);
 
   useEffect(() => {
     if (!token) {
@@ -929,7 +1131,13 @@ const Profile = () => {
 
   const bio = profile?.bio || (viewingOwnProfile ? "Use this space to tell readers what you write about." : "This writer hasn't added a bio yet.");
   const avatar = profile?.avatar || buildFallbackAvatar(displayName);
-  const coverImage = profile?.coverImage || COVER_FALLBACK;
+  const coverDetails = useMemo(() => resolveCoverDetails(profile?.coverImage), [profile?.coverImage]);
+  const coverImage = coverDetails.url || COVER_FALLBACK;
+  const coverPlaceholder = coverDetails.placeholder;
+  const hasCustomCover = Boolean(coverDetails.url);
+  const heroBackgroundStyle = coverPlaceholder
+    ? { backgroundImage: `url(${coverPlaceholder})` }
+    : undefined;
   const topics = Array.isArray(profile?.topics) ? profile.topics : [];
   const joinedAt = profile?.createdAt ? new Date(profile.createdAt) : null;
 
@@ -992,9 +1200,37 @@ const Profile = () => {
 
   return (
     <div className="profile-page">
-      <div className="profile-hero">
+      <div className="profile-hero" style={heroBackgroundStyle}>
         <img src={coverImage} alt="Profile banner" />
         <div className="profile-hero__overlay" />
+        {viewingOwnProfile && (
+          <div className="profile-hero__controls">
+            <label
+              className="profile-hero__button profile-hero__button--primary"
+              data-busy={coverUpdating ? "true" : undefined}
+              aria-disabled={coverUpdating ? "true" : "false"}
+            >
+              <input
+                type="file"
+                accept="image/*"
+                className="profile-hero__input"
+                onChange={handleCoverUpload}
+                disabled={coverUpdating}
+              />
+              {coverUpdating ? "Updating…" : "Change cover"}
+            </label>
+            {hasCustomCover && (
+              <button
+                type="button"
+                className="profile-hero__button profile-hero__button--ghost"
+                onClick={handleCoverRemove}
+                disabled={coverUpdating}
+              >
+                Remove
+              </button>
+            )}
+          </div>
+        )}
       </div>
       <div className="profile-shell">
         <main className="profile-main">

@@ -1,6 +1,19 @@
 import mongoose from "mongoose";
 import bcrypt from "bcryptjs";
 
+const imageAssetSchema = new mongoose.Schema(
+  {
+    url: { type: String, trim: true },
+    secureUrl: { type: String, trim: true },
+    originalUrl: { type: String, trim: true },
+    thumbnailUrl: { type: String, trim: true },
+    placeholderUrl: { type: String, trim: true },
+    publicId: { type: String, trim: true },
+    uploadedAt: { type: Date },
+  },
+  { _id: false }
+);
+
 const userSchema = new mongoose.Schema({
   provider: { type: String},
   providerId: { type: String},
@@ -17,6 +30,7 @@ const userSchema = new mongoose.Schema({
   resetPasswordToken: String,
   resetPasswordExpires: Date,
   avatar: { type: String },
+  coverImage: { type: imageAssetSchema, default: null },
   bio: { type: String, maxlength: 160 },
   pronouns: [{ type: String ,maxlength: 4}],
   hasSubdomain: { type: Boolean, default: false },

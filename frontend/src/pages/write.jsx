@@ -124,11 +124,11 @@ const formatRelativeTimestamp = (timestamp) => {
 const NAVIGATION_WARNING_MESSAGE =
   "You have unsaved changes. Are you sure you want to leave without saving?";
 
-const useNavigationPrompt = (when, message = NAVIGATION_WARNING_MESSAGE) => {
+const useNavigationPrompt = (when, onNavigationAttempt) => {
   const navigationContext = useContext(UNSAFE_NavigationContext);
 
   useEffect(() => {
-    if (!when) {
+    if (!when || typeof onNavigationAttempt !== "function") {
       return undefined;
     }
 
@@ -138,15 +138,11 @@ const useNavigationPrompt = (when, message = NAVIGATION_WARNING_MESSAGE) => {
     }
 
     const unblock = navigator.block((tx) => {
-      const confirmLeave = window.confirm(message);
-      if (confirmLeave) {
-        unblock();
-        tx.retry();
-      }
+      onNavigationAttempt({ tx, unblock });
     });
 
     return unblock;
-  }, [when, message, navigationContext]);
+  }, [when, navigationContext, onNavigationAttempt]);
 };
 
 const MARK_TYPE_MAP = {
@@ -601,10 +597,56 @@ const Write = ({ postId, authorId }) => {
   const [distributionMode, setDistributionMode] = useState(null);
   const [hasPendingChanges, setHasPendingChanges] = useState(false);
   const [emailPromptVisible, setEmailPromptVisible] = useState(false);
-  const [isBubbleMenuEnabled, setIsBubbleMenuEnabled] = useState(true);
-  const [isEditorViewReady, setIsEditorViewReady] = useState(false);
+  const [navigationPromptState, setNavigationPromptState] = useState(null);
+  const [infoModal, setInfoModal] = useState(null);
 
-  useNavigationPrompt(!autoSaveEnabled && hasPendingChanges);
+  const handleBlockedNavigation = useCallback(({ tx, unblock }) => {
+    setNavigationPromptState({ tx, unblock });
+  }, []);
+
+  useNavigationPrompt(!autoSaveEnabled && hasPendingChanges, handleBlockedNavigation);
+
+  useEffect(() => {
+    if (!(!autoSaveEnabled && hasPendingChanges)) {
+      setNavigationPromptState(null);
+    }
+  }, [autoSaveEnabled, hasPendingChanges]);
+
+  const dismissNavigationPrompt = useCallback(() => {
+    setNavigationPromptState(null);
+  }, []);
+
+  const confirmNavigationPrompt = useCallback(() => {
+    setNavigationPromptState((current) => {
+      if (current) {
+        current.unblock();
+        current.tx.retry();
+      }
+      return null;
+    });
+  }, []);
+
+  const openInfoModal = useCallback((config) => {
+    setInfoModal({
+      title: config.title,
+      message: config.message,
+      primaryLabel: config.primaryLabel || "OK",
+      onPrimary: config.onPrimary || null,
+    });
+  }, []);
+
+  const closeInfoModal = useCallback(() => {
+    setInfoModal(null);
+  }, []);
+
+  const handleInfoModalPrimary = useCallback(() => {
+    setInfoModal((current) => {
+      if (current?.onPrimary) {
+        current.onPrimary();
+      }
+      return null;
+    });
+  }, []);
 
   useEffect(() => {
     if (!autoSaveEnabled || !hasPendingChanges) {
@@ -628,6 +670,7 @@ const Write = ({ postId, authorId }) => {
   }, [autoSaveEnabled]);
 
   const coverInputRef = useRef(null);
+  const titleInputRef = useRef(null);
   const inlineImageInputRef = useRef(null);
   const autoSaveTimer = useRef(null);
   const editorRef = useRef(null);
@@ -858,6 +901,12 @@ const Write = ({ postId, authorId }) => {
     });
   }, []);
 
+  const handleSaveDraftFromPrompt = useCallback(async () => {
+    await waitForActiveSave();
+    await persistDraft();
+    setNavigationPromptState(null);
+  }, [persistDraft, waitForActiveSave]);
+
   const scheduleAutoSave = useCallback(() => {
     if (!editorRef.current || !token || bootstrappingRef.current) {
       return;
@@ -947,7 +996,15 @@ const Write = ({ postId, authorId }) => {
       }
 
       if (!payload.title) {
-        window.alert("Add a title before publishing.");
+        openInfoModal({
+          title: "Add a title",
+          message:
+            "Give your story a title before publishing so readers know what it's about.",
+          primaryLabel: "Continue writing",
+          onPrimary: () => {
+            titleInputRef.current?.focus();
+          },
+        });
         return;
       }
 
@@ -977,12 +1034,6 @@ const Write = ({ postId, authorId }) => {
       } finally {
         saveInFlightRef.current = false;
         setIsPublishing(false);
-        if (
-          isMountedRef.current &&
-          (!editorRef.current || !editorRef.current.isDestroyed)
-        ) {
-          setIsBubbleMenuEnabled(true);
-        }
         if (pendingSaveRef.current) {
           pendingSaveRef.current = false;
           persistDraft();
@@ -998,9 +1049,7 @@ const Write = ({ postId, authorId }) => {
       draftMeta,
       navigate,
       persistDraft,
-      setIsBubbleMenuEnabled,
-      isMountedRef,
-      editorRef,
+      openInfoModal,
     ]
   );
 
@@ -1038,50 +1087,6 @@ const Write = ({ postId, authorId }) => {
       if (editorRef.current === editor) {
         editorRef.current = null;
       }
-    };
-  }, [editor]);
-
-  useEffect(() => {
-    if (!editor) {
-      setIsEditorViewReady(false);
-      return undefined;
-    }
-
-    let cancelled = false;
-
-    const markReady = () => {
-      if (!cancelled && !editor.isDestroyed) {
-        setIsEditorViewReady(true);
-      }
-    };
-
-    const markNotReady = () => {
-      if (!cancelled) {
-        setIsEditorViewReady(false);
-      }
-    };
-
-    editor.on("create", markReady);
-    editor.on("update", markReady);
-    editor.on("selectionUpdate", markReady);
-    editor.on("focus", markReady);
-    editor.on("destroy", markNotReady);
-
-    try {
-      if (!editor.isDestroyed && editor.view) {
-        markReady();
-      }
-    } catch (error) {
-      // view not yet ready; ignore
-    }
-
-    return () => {
-      cancelled = true;
-      editor.off("create", markReady);
-      editor.off("update", markReady);
-      editor.off("selectionUpdate", markReady);
-      editor.off("focus", markReady);
-      editor.off("destroy", markNotReady);
     };
   }, [editor]);
 
@@ -1207,19 +1212,6 @@ const Write = ({ postId, authorId }) => {
     }
 
     const { state, view } = editor;
-    if (!state || !view || !view.dom || !state.selection) {
-      if (isInsertMenuOpen || insertMode) {
-        return;
-      }
-      setFloatingMenuState((previous) => {
-        if (!previous.visible) {
-          return previous;
-        }
-        return { ...previous, visible: false };
-      });
-      setIsInsertMenuOpen(false);
-      return;
-    }
     if (!shouldShowFloatingMenu(editor, state)) {
       if (isInsertMenuOpen || insertMode) {
         return;
@@ -1579,98 +1571,73 @@ const Write = ({ postId, authorId }) => {
       return;
     }
 
-    setIsBubbleMenuEnabled(false);
-
-    try {
-      if (autoSaveTimer.current) {
-        clearTimeout(autoSaveTimer.current);
-        autoSaveTimer.current = null;
-      }
-
-      pendingSaveRef.current = false;
-      await waitForActiveSave();
-
-      const resolvedDistributionMode = (distributionMode || (sendEmailsPreference ? "AUTO_EMAIL" : "PROMPT"))
-        .toString()
-        .trim()
-        .toUpperCase() === "PROMPT"
-        ? "PROMPT"
-        : "AUTO_EMAIL";
-
-      setDistributionMode(resolvedDistributionMode);
-
-      if (resolvedDistributionMode === "PROMPT") {
-        pendingPublishRef.current = {
-          distributionMode: resolvedDistributionMode,
-        };
-        setEmailPromptVisible(true);
-        if (isMountedRef.current) {
-          setIsBubbleMenuEnabled(true);
-        }
-        return;
-      }
-
-      await publishStory({
-        distributionMode: resolvedDistributionMode,
-        shouldSendDistributionEmail: true,
-      });
-      if (
-        isMountedRef.current &&
-        (!editorRef.current || !editorRef.current.isDestroyed)
-      ) {
-        setIsBubbleMenuEnabled(true);
-      }
-    } catch (error) {
-      console.error(error);
-      if (isMountedRef.current) {
-        setIsBubbleMenuEnabled(true);
-      }
-      setSaveError((error && error.message) || "Failed to publish your story.");
+    if (autoSaveTimer.current) {
+      clearTimeout(autoSaveTimer.current);
+      autoSaveTimer.current = null;
     }
+
+    pendingSaveRef.current = false;
+    await waitForActiveSave();
+
+    const resolvedDistributionMode = (distributionMode || (sendEmailsPreference ? "AUTO_EMAIL" : "PROMPT"))
+      .toString()
+      .trim()
+      .toUpperCase() === "PROMPT"
+      ? "PROMPT"
+      : "AUTO_EMAIL";
+
+    setDistributionMode(resolvedDistributionMode);
+
+    if (resolvedDistributionMode === "PROMPT") {
+      pendingPublishRef.current = {
+        distributionMode: resolvedDistributionMode,
+      };
+      setEmailPromptVisible(true);
+      return;
+    }
+
+    publishStory({
+      distributionMode: resolvedDistributionMode,
+      shouldSendDistributionEmail: true,
+    });
   }, [
     token,
     waitForActiveSave,
     publishStory,
     distributionMode,
     sendEmailsPreference,
-    setIsBubbleMenuEnabled,
-    isMountedRef,
-    editorRef,
   ]);
 
   const handleEmailPromptDecision = useCallback(
-    async (shouldSend) => {
-      setEmailPromptVisible(false);
-      setIsBubbleMenuEnabled(false);
-
+    (shouldSend) => {
       const pending = pendingPublishRef.current;
       pendingPublishRef.current = null;
       if (!pending) {
-        if (isMountedRef.current) {
-          setIsBubbleMenuEnabled(true);
-        }
+        setEmailPromptVisible(false);
         return;
       }
 
-      try {
-        await publishStory({
-          distributionMode: pending.distributionMode,
-          shouldSendDistributionEmail: shouldSend,
-        });
-      } finally {
-        if (isMountedRef.current) {
-          setIsBubbleMenuEnabled(true);
-        }
-      }
+      publishStory({
+        distributionMode: pending.distributionMode,
+        shouldSendDistributionEmail: shouldSend,
+      });
     },
-    [publishStory, setIsBubbleMenuEnabled, isMountedRef]
+    [publishStory]
   );
 
   const handleEmailPromptCancel = useCallback(() => {
     pendingPublishRef.current = null;
     setEmailPromptVisible(false);
-    setIsBubbleMenuEnabled(true);
   }, []);
+
+  const handlePreviewClick = useCallback(() => {
+    openInfoModal({
+      title: "Preview coming soon",
+      message:
+        "We're building a polished preview experience. In the meantime, publish or save a draft to review your story.",
+      primaryLabel: "Close",
+    });
+  }, [openInfoModal]);
 
   const headerStatus = useMemo(() => {
     if (bootstrapLoading) {
@@ -1946,38 +1913,21 @@ const Write = ({ postId, authorId }) => {
   ]);
 
   const bubbleMenuShouldShow = useCallback(({ editor: activeEditor, view }) => {
-    if (!isBubbleMenuEnabled || !isEditorViewReady) {
-      return false;
-    }
-
     if (!activeEditor || activeEditor.isDestroyed) {
       return false;
     }
 
-    let editorView = view;
-    if (!editorView) {
-      try {
-        editorView = activeEditor.view;
-      } catch (error) {
-        return false;
-      }
-    }
-
+    const editorView = view || activeEditor.view;
     if (!editorView || !editorView.dom) {
       return false;
     }
 
-    const docView = editorView.docView;
-    if (!docView || typeof docView.domFromPos !== "function") {
+    if (!editorView.docView || typeof editorView.docView.domFromPos !== "function") {
       return false;
     }
 
     const { state } = activeEditor;
     if (!state || !state.selection) {
-      return false;
-    }
-
-    if (typeof activeEditor.isFocused === "boolean" && !activeEditor.isFocused) {
       return false;
     }
 
@@ -1992,7 +1942,7 @@ const Write = ({ postId, authorId }) => {
     }
 
     return typeof editorView.hasFocus === "function" ? editorView.hasFocus() : true;
-  }, [isBubbleMenuEnabled, isEditorViewReady]);
+  }, []);
 
   return (
     <div className="write-page">
@@ -2018,6 +1968,58 @@ const Write = ({ postId, authorId }) => {
               </button>
               <button type="button" className="write-modal__close" onClick={handleEmailPromptCancel} aria-label="Cancel">
                 Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {infoModal && (
+        <div className="write-modal" role="dialog" aria-modal="true" aria-labelledby="infoModalTitle">
+          <div className="write-modal__backdrop" onClick={closeInfoModal} />
+          <div
+            className="write-modal__content"
+            role="document"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <h2 id="infoModalTitle">{infoModal.title}</h2>
+            <p>{infoModal.message}</p>
+            <div className="write-modal__actions">
+              <button
+                type="button"
+                className="write-modal__btn write-modal__btn--primary"
+                onClick={handleInfoModalPrimary}
+              >
+                {infoModal.primaryLabel}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {navigationPromptState && (
+        <div className="write-modal" role="dialog" aria-modal="true" aria-labelledby="navigationPromptTitle">
+          <div className="write-modal__backdrop" onClick={dismissNavigationPrompt} />
+          <div
+            className="write-modal__content"
+            role="document"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <h2 id="navigationPromptTitle">Save draft before leaving?</h2>
+            <p>
+              Autosave is turned off and you have unsaved changes. Save your draft or stay on this page to keep writing.
+            </p>
+            <div className="write-modal__actions">
+              <button type="button" className="write-modal__btn" onClick={dismissNavigationPrompt}>
+                Stay and continue writing
+              </button>
+              <button type="button" className="write-modal__btn" onClick={handleSaveDraftFromPrompt}>
+                Save draft
+              </button>
+              <button
+                type="button"
+                className="write-modal__btn write-modal__btn--primary"
+                onClick={confirmNavigationPrompt}
+              >
+                Leave without saving
               </button>
             </div>
           </div>
@@ -2053,7 +2055,7 @@ const Write = ({ postId, authorId }) => {
           <button
             type="button"
             className="write-header__btn"
-            onClick={() => window.alert("Preview coming soon")}
+            onClick={handlePreviewClick}
           >
             Preview
           </button>
@@ -2145,6 +2147,7 @@ const Write = ({ postId, authorId }) => {
 
           <div className="write-fields">
             <textarea
+              ref={titleInputRef}
               className="write-title"
               placeholder="Title"
               value={title}
@@ -2433,11 +2436,9 @@ const Write = ({ postId, authorId }) => {
               onChange={handleInlineFileChange}
               aria-hidden="true"
             />
-            {/* Bubble menu — shows formatting options when text is selected */}
-            {isBubbleMenuEnabled &&
-              isEditorViewReady &&
-              editor &&
-              !editor.isDestroyed &&
+
+            {editor && !editor.isDestroyed && editor.view && editor.view.docView &&
+              typeof editor.view.docView.domFromPos === "function" &&
               bubbleMenuItems.length > 0 && (
               <BubbleMenu
                 editor={editor}

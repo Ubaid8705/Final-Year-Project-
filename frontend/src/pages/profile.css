@@ -11,6 +11,10 @@
   width: 100%;
   height: clamp(220px, 32vw, 320px);
   overflow: hidden;
+  background-color: #102313;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
 }
 
 .profile-hero img {
@@ -24,6 +28,66 @@
   position: absolute;
   inset: 0;
   background: linear-gradient(180deg, rgba(0, 0, 0, 0.35) 0%, rgba(0, 0, 0, 0) 55%);
+}
+
+.profile-hero__controls {
+  position: absolute;
+  right: clamp(12px, 4vw, 36px);
+  bottom: clamp(12px, 4vw, 36px);
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  z-index: 2;
+}
+
+.profile-hero__button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 11px 22px;
+  border-radius: 999px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease, background 0.2s ease;
+  backdrop-filter: blur(14px);
+}
+
+.profile-hero__button--primary {
+  background: linear-gradient(135deg, #1a8917, #18a058);
+  color: #ffffff;
+  box-shadow: 0 22px 44px -30px rgba(26, 137, 23, 0.9);
+}
+
+.profile-hero__button--primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 28px 54px -26px rgba(26, 137, 23, 0.95);
+}
+
+.profile-hero__button--ghost {
+  background: rgba(15, 23, 42, 0.45);
+  color: #f9fafb;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+}
+
+.profile-hero__button--ghost:hover {
+  background: rgba(15, 23, 42, 0.6);
+  transform: translateY(-1px);
+}
+
+.profile-hero__button:disabled,
+.profile-hero__button[data-busy="true"] {
+  opacity: 0.7;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+  pointer-events: none;
+}
+
+.profile-hero__input {
+  display: none;
 }
 
 .profile-shell {
