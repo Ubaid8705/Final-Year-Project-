@@ -130,6 +130,102 @@
     align-items: start;
 }
 
+.write-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 1200;
+    display: grid;
+    place-items: center;
+    pointer-events: none;
+}
+
+.write-modal__backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(17, 17, 17, 0.45);
+    backdrop-filter: blur(2px);
+    pointer-events: auto;
+}
+
+.write-modal__content {
+    position: relative;
+    width: min(420px, calc(100% - 48px));
+    background: #ffffff;
+    border-radius: 18px;
+    padding: 28px 32px;
+    box-shadow: 0 32px 60px -36px rgba(0, 0, 0, 0.4);
+    pointer-events: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.write-modal__content h2 {
+    margin: 0;
+    font-size: 1.35rem;
+    color: #111111;
+}
+
+.write-modal__content p {
+    margin: 0;
+    font-size: 0.98rem;
+    color: #444444;
+    line-height: 1.55;
+}
+
+.write-modal__actions {
+    margin-top: 8px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+}
+
+.write-modal__btn {
+    border: none;
+    background: rgba(17, 17, 17, 0.08);
+    color: #111111;
+    font-weight: 600;
+    padding: 10px 18px;
+    border-radius: 999px;
+    cursor: pointer;
+    transition: background 0.18s ease, transform 0.18s ease;
+}
+
+.write-modal__btn:hover,
+.write-modal__btn:focus-visible {
+    background: rgba(17, 17, 17, 0.14);
+    transform: translateY(-1px);
+    outline: none;
+}
+
+.write-modal__btn--primary {
+    background: linear-gradient(135deg, #1a8917, #1c9c6e);
+    color: #ffffff;
+}
+
+.write-modal__btn--primary:hover,
+.write-modal__btn--primary:focus-visible {
+    background: linear-gradient(135deg, #1c9c6e, #18b46a);
+}
+
+.write-modal__close {
+    margin-left: auto;
+    border: none;
+    background: transparent;
+    color: #555555;
+    font-size: 0.95rem;
+    cursor: pointer;
+    padding: 8px 0;
+    transition: color 0.18s ease;
+}
+
+.write-modal__close:hover,
+.write-modal__close:focus-visible {
+    color: #111111;
+    outline: none;
+}
+
 .write-stage {
     display: flex;
     flex-direction: column;

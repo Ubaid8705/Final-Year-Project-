@@ -1,11 +1,17 @@
 import React, {
   useCallback,
+  useContext,
   useEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
-import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import {
+  useLocation,
+  useNavigate,
+  useSearchParams,
+  UNSAFE_NavigationContext,
+} from "react-router-dom";
 import { EditorContent, useEditor } from "@tiptap/react";
 import { BubbleMenu } from "@tiptap/react/menus";
 import StarterKit from "@tiptap/starter-kit";
@@ -113,6 +119,34 @@ const formatRelativeTimestamp = (timestamp) => {
     month: "short",
     day: "numeric",
   })}`;
+};
+
+const NAVIGATION_WARNING_MESSAGE =
+  "You have unsaved changes. Are you sure you want to leave without saving?";
+
+const useNavigationPrompt = (when, message = NAVIGATION_WARNING_MESSAGE) => {
+  const navigationContext = useContext(UNSAFE_NavigationContext);
+
+  useEffect(() => {
+    if (!when) {
+      return undefined;
+    }
+
+    const navigator = navigationContext?.navigator;
+    if (!navigator || typeof navigator.block !== "function") {
+      return undefined;
+    }
+
+    const unblock = navigator.block((tx) => {
+      const confirmLeave = window.confirm(message);
+      if (confirmLeave) {
+        unblock();
+        tx.retry();
+      }
+    });
+
+    return unblock;
+  }, [when, message, navigationContext]);
 };
 
 const MARK_TYPE_MAP = {
@@ -562,6 +596,36 @@ const Write = ({ postId, authorId }) => {
   const [draftMeta, setDraftMeta] = useState(() => ({ id: initialPostIdentifier || null, slug: statePostSlug || null }));
   const [bootstrapLoading, setBootstrapLoading] = useState(Boolean(initialPostIdentifier));
   const [bootstrapError, setBootstrapError] = useState(null);
+  const [autoSaveEnabled, setAutoSaveEnabled] = useState(true);
+  const [sendEmailsPreference, setSendEmailsPreference] = useState(true);
+  const [distributionMode, setDistributionMode] = useState(null);
+  const [hasPendingChanges, setHasPendingChanges] = useState(false);
+  const [emailPromptVisible, setEmailPromptVisible] = useState(false);
+  const [isBubbleMenuEnabled, setIsBubbleMenuEnabled] = useState(true);
+  const [isEditorViewReady, setIsEditorViewReady] = useState(false);
+
+  useNavigationPrompt(!autoSaveEnabled && hasPendingChanges);
+
+  useEffect(() => {
+    if (!autoSaveEnabled || !hasPendingChanges) {
+      return undefined;
+    }
+
+    const handleBeforeUnload = (event) => {
+      event.preventDefault();
+      event.returnValue = NAVIGATION_WARNING_MESSAGE;
+      return NAVIGATION_WARNING_MESSAGE;
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [autoSaveEnabled, hasPendingChanges]);
+
+  useEffect(() => {
+    if (autoSaveEnabled) {
+      setHasPendingChanges(false);
+    }
+  }, [autoSaveEnabled]);
 
   const coverInputRef = useRef(null);
   const inlineImageInputRef = useRef(null);
@@ -573,6 +637,15 @@ const Write = ({ postId, authorId }) => {
   const pendingSaveRef = useRef(false);
   const bootstrappingRef = useRef(Boolean(initialPostIdentifier));
   const pendingDocRef = useRef(null);
+  const pendingPublishRef = useRef(null);
+  const isMountedRef = useRef(true);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   const displayName = user?.name || user?.username || "Your workspace";
 
@@ -596,6 +669,13 @@ const Write = ({ postId, authorId }) => {
         ? plainText.trim().split(/\s+/).filter(Boolean).length
         : 0;
       const readingTime = wordCount ? Math.max(1, Math.ceil(wordCount / 200)) : 0;
+
+      const resolvedDistribution = (distributionMode || (sendEmailsPreference ? "AUTO_EMAIL" : "PROMPT"))
+        .toString()
+        .trim()
+        .toUpperCase() === "PROMPT"
+        ? "PROMPT"
+        : "AUTO_EMAIL";
 
       return {
         title: title.trim(),
@@ -621,10 +701,11 @@ const Write = ({ postId, authorId }) => {
           : null,
         wordCount,
         readingTime,
+        distributionMode: resolvedDistribution,
         ...overrides,
       };
     },
-  [title, subtitle, tags, coverAsset]
+  [title, subtitle, tags, coverAsset, distributionMode, sendEmailsPreference]
   );
 
   const sendPostPayload = useCallback(
@@ -741,9 +822,13 @@ const Write = ({ postId, authorId }) => {
     try {
       await sendPostPayload(payload);
       setLastSavedAt(Date.now());
+      setHasPendingChanges(false);
     } catch (error) {
       console.error(error);
       setSaveError(error.message || "Failed to save draft.");
+      if (!autoSaveEnabled) {
+        setHasPendingChanges(true);
+      }
     } finally {
       saveInFlightRef.current = false;
       if (pendingSaveRef.current) {
@@ -753,7 +838,7 @@ const Write = ({ postId, authorId }) => {
       }
       setIsSaving(false);
     }
-  }, [token, buildPayload, sendPostPayload]);
+  }, [token, buildPayload, sendPostPayload, autoSaveEnabled]);
 
   const waitForActiveSave = useCallback(() => {
     if (!saveInFlightRef.current) {
@@ -778,16 +863,23 @@ const Write = ({ postId, authorId }) => {
       return;
     }
 
-    setIsSaving(true);
+    if (!autoSaveEnabled) {
+      setHasPendingChanges(true);
+      return;
+    }
+
     if (autoSaveTimer.current) {
       clearTimeout(autoSaveTimer.current);
     }
+
+    setIsSaving(true);
+    setHasPendingChanges(false);
 
     autoSaveTimer.current = window.setTimeout(() => {
       autoSaveTimer.current = null;
       persistDraft();
     }, 1200);
-  }, [token, persistDraft]);
+  }, [token, persistDraft, autoSaveEnabled]);
 
   const codeSyntaxLowlight = useMemo(() => createCodeLowlight(), []);
 
@@ -828,6 +920,90 @@ const Write = ({ postId, authorId }) => {
     },
   });
 
+  const publishStory = useCallback(
+    async ({ distributionMode: distributionModeOverride, shouldSendDistributionEmail }) => {
+      if (!token) {
+        setSaveError("Sign in to publish your story.");
+        return;
+      }
+
+      const normalizedMode = (distributionModeOverride || distributionMode || (sendEmailsPreference ? "AUTO_EMAIL" : "PROMPT"))
+        .toString()
+        .trim()
+        .toUpperCase() === "PROMPT"
+        ? "PROMPT"
+        : "AUTO_EMAIL";
+
+      setDistributionMode(normalizedMode);
+      setEmailPromptVisible(false);
+
+      const payload = buildPayload({
+        isPublished: true,
+        distributionMode: normalizedMode,
+        shouldSendDistributionEmail,
+      });
+      if (!payload) {
+        return;
+      }
+
+      if (!payload.title) {
+        window.alert("Add a title before publishing.");
+        return;
+      }
+
+      setIsPublishing(true);
+      setSaveError(null);
+
+      try {
+        saveInFlightRef.current = true;
+        const data = await sendPostPayload(payload);
+        setLastSavedAt(Date.now());
+
+        const targetSlug = data.slug || draftMeta?.slug;
+        const targetId = data.id || data._id || draftMeta?.id;
+
+        setHasPendingChanges(false);
+
+        if (targetSlug) {
+          navigate(`/post/${targetSlug}`);
+        } else if (targetId) {
+          navigate(`/post/${targetId}`);
+        } else {
+          navigate(-1);
+        }
+      } catch (error) {
+        console.error(error);
+        setSaveError(error.message || "Failed to publish your story.");
+      } finally {
+        saveInFlightRef.current = false;
+        setIsPublishing(false);
+        if (
+          isMountedRef.current &&
+          (!editorRef.current || !editorRef.current.isDestroyed)
+        ) {
+          setIsBubbleMenuEnabled(true);
+        }
+        if (pendingSaveRef.current) {
+          pendingSaveRef.current = false;
+          persistDraft();
+        }
+      }
+    },
+    [
+      token,
+      distributionMode,
+      sendEmailsPreference,
+      buildPayload,
+      sendPostPayload,
+      draftMeta,
+      navigate,
+      persistDraft,
+      setIsBubbleMenuEnabled,
+      isMountedRef,
+      editorRef,
+    ]
+  );
+
   const applyCodeBlockLanguageAttributes = useCallback(() => {
     const editorInstance = editorRef.current;
     if (!editorInstance || editorInstance.isDestroyed) {
@@ -867,6 +1043,103 @@ const Write = ({ postId, authorId }) => {
 
   useEffect(() => {
     if (!editor) {
+      setIsEditorViewReady(false);
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    const markReady = () => {
+      if (!cancelled && !editor.isDestroyed) {
+        setIsEditorViewReady(true);
+      }
+    };
+
+    const markNotReady = () => {
+      if (!cancelled) {
+        setIsEditorViewReady(false);
+      }
+    };
+
+    editor.on("create", markReady);
+    editor.on("update", markReady);
+    editor.on("selectionUpdate", markReady);
+    editor.on("focus", markReady);
+    editor.on("destroy", markNotReady);
+
+    try {
+      if (!editor.isDestroyed && editor.view) {
+        markReady();
+      }
+    } catch (error) {
+      // view not yet ready; ignore
+    }
+
+    return () => {
+      cancelled = true;
+      editor.off("create", markReady);
+      editor.off("update", markReady);
+      editor.off("selectionUpdate", markReady);
+      editor.off("focus", markReady);
+      editor.off("destroy", markNotReady);
+    };
+  }, [editor]);
+
+  useEffect(() => {
+    if (!token) {
+      setAutoSaveEnabled(true);
+      setSendEmailsPreference(true);
+      if (!initialPostIdentifier) {
+        setDistributionMode((previous) => previous || "AUTO_EMAIL");
+      }
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadSettings = async () => {
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/settings/me`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        const data = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+          throw new Error(data.error || "Failed to load settings.");
+        }
+
+        if (cancelled) {
+          return;
+        }
+
+        const nextAutoSave =
+          typeof data.autoSave === "boolean" ? data.autoSave : true;
+        const nextSendEmails =
+          typeof data.sendEmails === "boolean" ? data.sendEmails : true;
+
+        setAutoSaveEnabled(nextAutoSave);
+        setSendEmailsPreference(nextSendEmails);
+
+        if (!initialPostIdentifier) {
+          setDistributionMode(nextSendEmails ? "AUTO_EMAIL" : "PROMPT");
+        }
+      } catch (error) {
+        console.error(error);
+      }
+    };
+
+    loadSettings();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [token, initialPostIdentifier]);
+
+  useEffect(() => {
+    if (!editor) {
       return;
     }
 
@@ -877,6 +1150,7 @@ const Write = ({ postId, authorId }) => {
       editor.commands.focus("end");
       setIsEditorEmpty(editor.isEmpty);
       applyCodeBlockLanguageAttributes();
+      setHasPendingChanges(false);
     }
   }, [editor, applyCodeBlockLanguageAttributes]);
 
@@ -933,6 +1207,19 @@ const Write = ({ postId, authorId }) => {
     }
 
     const { state, view } = editor;
+    if (!state || !view || !view.dom || !state.selection) {
+      if (isInsertMenuOpen || insertMode) {
+        return;
+      }
+      setFloatingMenuState((previous) => {
+        if (!previous.visible) {
+          return previous;
+        }
+        return { ...previous, visible: false };
+      });
+      setIsInsertMenuOpen(false);
+      return;
+    }
     if (!shouldShowFloatingMenu(editor, state)) {
       if (isInsertMenuOpen || insertMode) {
         return;
@@ -1120,6 +1407,18 @@ const Write = ({ postId, authorId }) => {
         setCoverAsset(normalizeCoverAssetFromPost(data));
         setCoverUploadState({ loading: false, error: null });
 
+        if (data.settingsSnapshot && typeof data.settingsSnapshot.sendEmails === "boolean") {
+          setSendEmailsPreference(data.settingsSnapshot.sendEmails);
+        }
+
+        if (data.distributionMode) {
+          const normalizedDistribution = data.distributionMode
+            .toString()
+            .trim()
+            .toUpperCase();
+          setDistributionMode(normalizedDistribution === "PROMPT" ? "PROMPT" : "AUTO_EMAIL");
+        }
+
         const doc = transformContentToDoc(data.content);
         const editorInstance = editorRef.current;
         if (editorInstance) {
@@ -1280,54 +1579,98 @@ const Write = ({ postId, authorId }) => {
       return;
     }
 
-    if (autoSaveTimer.current) {
-      clearTimeout(autoSaveTimer.current);
-      autoSaveTimer.current = null;
-    }
-
-    pendingSaveRef.current = false;
-    await waitForActiveSave();
-
-    const payload = buildPayload({ isPublished: true });
-    if (!payload) {
-      return;
-    }
-
-    if (!payload.title) {
-      window.alert("Add a title before publishing.");
-      return;
-    }
-
-    setIsPublishing(true);
-    setSaveError(null);
+    setIsBubbleMenuEnabled(false);
 
     try {
-      saveInFlightRef.current = true;
-      const data = await sendPostPayload(payload);
-      setLastSavedAt(Date.now());
+      if (autoSaveTimer.current) {
+        clearTimeout(autoSaveTimer.current);
+        autoSaveTimer.current = null;
+      }
 
-      const targetSlug = data.slug || draftMeta?.slug;
-      const targetId = data.id || data._id || draftMeta?.id;
+      pendingSaveRef.current = false;
+      await waitForActiveSave();
 
-      if (targetSlug) {
-        navigate(`/post/${targetSlug}`);
-      } else if (targetId) {
-        navigate(`/post/${targetId}`);
-      } else {
-        navigate(-1);
+      const resolvedDistributionMode = (distributionMode || (sendEmailsPreference ? "AUTO_EMAIL" : "PROMPT"))
+        .toString()
+        .trim()
+        .toUpperCase() === "PROMPT"
+        ? "PROMPT"
+        : "AUTO_EMAIL";
+
+      setDistributionMode(resolvedDistributionMode);
+
+      if (resolvedDistributionMode === "PROMPT") {
+        pendingPublishRef.current = {
+          distributionMode: resolvedDistributionMode,
+        };
+        setEmailPromptVisible(true);
+        if (isMountedRef.current) {
+          setIsBubbleMenuEnabled(true);
+        }
+        return;
+      }
+
+      await publishStory({
+        distributionMode: resolvedDistributionMode,
+        shouldSendDistributionEmail: true,
+      });
+      if (
+        isMountedRef.current &&
+        (!editorRef.current || !editorRef.current.isDestroyed)
+      ) {
+        setIsBubbleMenuEnabled(true);
       }
     } catch (error) {
       console.error(error);
-      setSaveError(error.message || "Failed to publish your story.");
-    } finally {
-      saveInFlightRef.current = false;
-      setIsPublishing(false);
-      if (pendingSaveRef.current) {
-        pendingSaveRef.current = false;
-        persistDraft();
+      if (isMountedRef.current) {
+        setIsBubbleMenuEnabled(true);
       }
+      setSaveError((error && error.message) || "Failed to publish your story.");
     }
-  }, [token, waitForActiveSave, buildPayload, sendPostPayload, draftMeta, navigate, persistDraft]);
+  }, [
+    token,
+    waitForActiveSave,
+    publishStory,
+    distributionMode,
+    sendEmailsPreference,
+    setIsBubbleMenuEnabled,
+    isMountedRef,
+    editorRef,
+  ]);
+
+  const handleEmailPromptDecision = useCallback(
+    async (shouldSend) => {
+      setEmailPromptVisible(false);
+      setIsBubbleMenuEnabled(false);
+
+      const pending = pendingPublishRef.current;
+      pendingPublishRef.current = null;
+      if (!pending) {
+        if (isMountedRef.current) {
+          setIsBubbleMenuEnabled(true);
+        }
+        return;
+      }
+
+      try {
+        await publishStory({
+          distributionMode: pending.distributionMode,
+          shouldSendDistributionEmail: shouldSend,
+        });
+      } finally {
+        if (isMountedRef.current) {
+          setIsBubbleMenuEnabled(true);
+        }
+      }
+    },
+    [publishStory, setIsBubbleMenuEnabled, isMountedRef]
+  );
+
+  const handleEmailPromptCancel = useCallback(() => {
+    pendingPublishRef.current = null;
+    setEmailPromptVisible(false);
+    setIsBubbleMenuEnabled(true);
+  }, []);
 
   const headerStatus = useMemo(() => {
     if (bootstrapLoading) {
@@ -1603,21 +1946,38 @@ const Write = ({ postId, authorId }) => {
   ]);
 
   const bubbleMenuShouldShow = useCallback(({ editor: activeEditor, view }) => {
+    if (!isBubbleMenuEnabled || !isEditorViewReady) {
+      return false;
+    }
+
     if (!activeEditor || activeEditor.isDestroyed) {
       return false;
     }
 
-    const editorView = view || activeEditor.view;
+    let editorView = view;
+    if (!editorView) {
+      try {
+        editorView = activeEditor.view;
+      } catch (error) {
+        return false;
+      }
+    }
+
     if (!editorView || !editorView.dom) {
       return false;
     }
 
-    if (!editorView.docView || typeof editorView.docView.domFromPos !== "function") {
+    const docView = editorView.docView;
+    if (!docView || typeof docView.domFromPos !== "function") {
       return false;
     }
 
     const { state } = activeEditor;
     if (!state || !state.selection) {
+      return false;
+    }
+
+    if (typeof activeEditor.isFocused === "boolean" && !activeEditor.isFocused) {
       return false;
     }
 
@@ -1632,10 +1992,37 @@ const Write = ({ postId, authorId }) => {
     }
 
     return typeof editorView.hasFocus === "function" ? editorView.hasFocus() : true;
-  }, []);
+  }, [isBubbleMenuEnabled, isEditorViewReady]);
 
   return (
     <div className="write-page">
+      {emailPromptVisible && (
+        <div className="write-modal" role="dialog" aria-modal="true" aria-labelledby="emailPromptTitle">
+          <div className="write-modal__backdrop" onClick={handleEmailPromptCancel} />
+          <div
+            className="write-modal__content"
+            role="document"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <h2 id="emailPromptTitle">Notify your followers?</h2>
+            <p>
+              Would you like us to email your followers about this newly published story?
+              You can always skip this step if you'd rather share manually.
+            </p>
+            <div className="write-modal__actions">
+              <button type="button" className="write-modal__btn write-modal__btn--primary" onClick={() => handleEmailPromptDecision(true)}>
+                Notify followers
+              </button>
+              <button type="button" className="write-modal__btn" onClick={() => handleEmailPromptDecision(false)}>
+                Skip email
+              </button>
+              <button type="button" className="write-modal__close" onClick={handleEmailPromptCancel} aria-label="Cancel">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <header className="write-header">
         <div className="write-header__left">
           <button
@@ -2046,9 +2433,11 @@ const Write = ({ postId, authorId }) => {
               onChange={handleInlineFileChange}
               aria-hidden="true"
             />
-
-            {editor && !editor.isDestroyed && editor.view && editor.view.docView &&
-              typeof editor.view.docView.domFromPos === "function" &&
+            {/* Bubble menu — shows formatting options when text is selected */}
+            {isBubbleMenuEnabled &&
+              isEditorViewReady &&
+              editor &&
+              !editor.isDestroyed &&
               bubbleMenuItems.length > 0 && (
               <BubbleMenu
                 editor={editor}

@@ -119,6 +119,7 @@ export const createCodeLowlight = () => {
     go: ["golang"],
     xml: ["html"],
     bash: ["shell", "sh"],
+    c: ["c-lang"],
     cpp: ["c++", "cplusplus"],
   });
 

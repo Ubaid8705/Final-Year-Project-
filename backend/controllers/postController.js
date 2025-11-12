@@ -14,6 +14,7 @@ import {
   RELATIONSHIP_STATUS,
   getRelationshipBetween,
 } from "../services/relationshipService.js";
+import { sendPostPublicationEmail } from "../services/emailService.js";
 
 const isObjectId = (value = "") => mongoose.Types.ObjectId.isValid(value);
 
@@ -112,6 +113,11 @@ const CODE_LANGUAGE_ALIASES = {
   bash: "bash",
   shell: "bash",
   sh: "bash",
+  c: "c",
+  "c-lang": "c",
+  cpp: "cpp",
+  "c++": "cpp",
+  cplusplus: "cpp",
 };
 
 const normalizeCodeLanguageToken = (value) => {
@@ -347,6 +353,161 @@ const normalizeContentBlocks = (blocks = []) => {
       return normalizedBlock;
     })
     .filter(Boolean);
+};
+
+const buildPostPermalink = (postDoc) => {
+  const base = (process.env.CLIENT_URL || "http://localhost:3000").toString().trim();
+  const normalizedBase = base.endsWith("/") ? base.slice(0, -1) : base;
+
+  const slugValue = typeof postDoc?.slug === "string" ? postDoc.slug.trim() : "";
+  if (slugValue) {
+    return `${normalizedBase}/post/${slugValue}`;
+  }
+
+  const identifierCandidate =
+    (postDoc?._id && typeof postDoc._id.toString === "function"
+      ? postDoc._id.toString()
+      : postDoc?._id) ||
+    (postDoc?.id && typeof postDoc.id.toString === "function"
+      ? postDoc.id.toString()
+      : postDoc?.id);
+
+  if (!identifierCandidate) {
+    return null;
+  }
+
+  return `${normalizedBase}/post/${identifierCandidate}`;
+};
+
+const extractFirstTextualContent = (content = []) => {
+  if (!Array.isArray(content)) {
+    return "";
+  }
+
+  for (const block of content) {
+    if (!block || typeof block !== "object") {
+      continue;
+    }
+
+    if (typeof block.text === "string" && block.text.trim()) {
+      return block.text.trim();
+    }
+
+    if (Array.isArray(block.items)) {
+      const item = block.items.find(
+        (entry) => entry && typeof entry.text === "string" && entry.text.trim()
+      );
+      if (item) {
+        return item.text.trim();
+      }
+    }
+
+    if (
+      typeof block.codeBlock === "string" &&
+      block.codeBlock.trim()
+    ) {
+      return block.codeBlock
+        .trim()
+        .split("\n")
+        .slice(0, 3)
+        .join(" ");
+    }
+  }
+
+  return "";
+};
+
+const derivePostPreview = (postDoc) => {
+  if (!postDoc) {
+    return "";
+  }
+
+  const subtitle = typeof postDoc.subtitle === "string" ? postDoc.subtitle.trim() : "";
+  if (subtitle) {
+    return subtitle;
+  }
+
+  const preview = extractFirstTextualContent(postDoc.content);
+  return preview || "";
+};
+
+const collectFollowerEmails = async (authorId) => {
+  if (!authorId) {
+    return [];
+  }
+
+  const relationships = await Relationship.find({
+    following: authorId,
+    status: "following",
+  })
+    .select("follower")
+    .lean();
+
+  if (!relationships.length) {
+    return [];
+  }
+
+  const followerIds = relationships
+    .map((entry) => entry.follower)
+    .filter(Boolean)
+    .map((value) => (value && typeof value.toString === "function" ? value.toString() : value));
+
+  if (!followerIds.length) {
+    return [];
+  }
+
+  const uniqueFollowerIds = [...new Set(followerIds)];
+
+  const followers = await User.find({ _id: { $in: uniqueFollowerIds } })
+    .select("email")
+    .lean();
+
+  return followers
+    .map((user) => (user.email || "").toString().trim().toLowerCase())
+    .filter(Boolean);
+};
+
+const dispatchPostPublicationEmail = async (postDoc, authorSettings = {}) => {
+  if (!postDoc?.author?._id) {
+    return;
+  }
+
+  const recipients = await collectFollowerEmails(postDoc.author._id);
+  if (!recipients.length) {
+    return;
+  }
+
+  const postUrl = buildPostPermalink(postDoc);
+  if (!postUrl) {
+    return;
+  }
+
+  const preview = derivePostPreview(postDoc);
+  const signature =
+    (typeof authorSettings.signature === "string" && authorSettings.signature.trim()) ||
+    "Thank you for reading!";
+
+  const displayName =
+    (typeof authorSettings.displayName === "string" && authorSettings.displayName.trim()) ||
+    (typeof postDoc.author.name === "string" && postDoc.author.name.trim()) ||
+    (typeof postDoc.author.username === "string" && postDoc.author.username.trim()) ||
+    "A BlogsHive creator";
+
+  await sendPostPublicationEmail({
+    recipients,
+    author: {
+      displayName,
+      name: postDoc.author.name,
+      username: postDoc.author.username,
+    },
+    post: {
+      title: postDoc.title,
+      url: postUrl,
+      subtitle: postDoc.subtitle,
+    },
+    preview,
+    signature,
+  });
 };
 
 const resolveCoverImageValue = (coverImage, coverMeta) => {
@@ -770,8 +931,30 @@ export const createPost = async (req, res) => {
     });
 
     await post.populate("author", "username name avatar bio membershipStatus");
+    const responsePayload = hydratePost(post);
 
-    res.status(201).json(hydratePost(post));
+    const explicitDistributionFlag = Object.prototype.hasOwnProperty.call(
+      req.body || {},
+      "shouldSendDistributionEmail"
+    )
+      ? Boolean(req.body.shouldSendDistributionEmail)
+      : null;
+
+    const shouldDistribute =
+      post.isPublished &&
+      (explicitDistributionFlag !== null
+        ? explicitDistributionFlag
+        : resolvedDistributionMode === "AUTO_EMAIL");
+
+    if (shouldDistribute) {
+      try {
+        await dispatchPostPublicationEmail(post, userSettings || {});
+      } catch (error) {
+        console.error("Failed to distribute post via email", error);
+      }
+    }
+
+    res.status(201).json(responsePayload);
   } catch (error) {
     res.status(500).json({ error: "Failed to create post" });
   }
@@ -790,6 +973,7 @@ export const updatePost = async (req, res) => {
       return res.status(403).json({ error: "Not authorized to edit this post" });
     }
 
+    const wasPublished = Boolean(post.isPublished);
     const body = req.body || {};
     const updates = {};
     const allowed = [
@@ -900,7 +1084,40 @@ export const updatePost = async (req, res) => {
       runValidators: true,
     }).populate("author", "username name avatar bio membershipStatus");
 
-    res.json(hydratePost(updated));
+    const responsePayload = hydratePost(updated);
+
+    const justPublished = !wasPublished && Boolean(updated.isPublished);
+    let shouldDistribute = false;
+
+    if (justPublished) {
+      const explicitDistributionFlag = Object.prototype.hasOwnProperty.call(
+        body,
+        "shouldSendDistributionEmail"
+      )
+        ? Boolean(body.shouldSendDistributionEmail)
+        : null;
+
+      const finalDistributionMode = (updated.distributionMode || "")
+        .toString()
+        .trim()
+        .toUpperCase();
+
+      shouldDistribute =
+        explicitDistributionFlag !== null
+          ? explicitDistributionFlag
+          : finalDistributionMode === "AUTO_EMAIL";
+    }
+
+    if (shouldDistribute) {
+      try {
+        const authorSettings = await UserSettings.findOne({ user: req.user._id }).lean();
+        await dispatchPostPublicationEmail(updated, authorSettings || {});
+      } catch (error) {
+        console.error("Failed to distribute post via email", error);
+      }
+    }
+
+    res.json(responsePayload);
   } catch (error) {
     res.status(500).json({ error: "Failed to update post" });
   }
