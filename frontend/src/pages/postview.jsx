@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import "./postview.css";
 import { API_BASE_URL } from "../config";
 import { useAuth } from "../contexts/AuthContext";
@@ -347,6 +347,25 @@ const renderBlock = (block, index, renderCodeBlock) => {
 	}
 };
 
+const sortCommentThread = (items = []) => {
+	if (!Array.isArray(items)) {
+		return [];
+	}
+
+	const cloned = items.map((item) => ({
+		...item,
+		replies: sortCommentThread(Array.isArray(item?.replies) ? item.replies : []),
+	}));
+
+	cloned.sort((a, b) => {
+		const timeA = new Date(a?.createdAt || 0).getTime();
+		const timeB = new Date(b?.createdAt || 0).getTime();
+		return timeB - timeA;
+	});
+
+	return cloned;
+};
+
 const CommentItem = ({
 	comment,
 	currentUserId,
@@ -519,6 +538,10 @@ const PostMeta = ({
 	isAuthenticated,
 	onClap,
 	clapping,
+	canManage,
+	onEdit,
+	onDelete,
+	manageBusy,
 }) => {
 	const dateLabel = formatDate(publishedAt);
 	const minutes = readingTime ? Math.max(1, Math.round(readingTime)) : null;
@@ -568,6 +591,26 @@ const PostMeta = ({
 				<span className="post-meta-response-count">
 					💬 {responseCount ?? 0}
 				</span>
+				{canManage && (
+					<div className="post-meta-manage">
+						<button
+							type="button"
+							className="post-meta-btn"
+							onClick={onEdit}
+							disabled={manageBusy}
+						>
+							Edit
+						</button>
+						<button
+							type="button"
+							className="post-meta-btn post-meta-btn--danger"
+							onClick={onDelete}
+							disabled={manageBusy}
+						>
+							{manageBusy ? "Deleting…" : "Delete"}
+						</button>
+					</div>
+				)}
 			</div>
 		</div>
 	);
@@ -589,6 +632,7 @@ const PostTags = ({ tags }) => {
 
 export default function PostView() {
 	const { id } = useParams();
+	const navigate = useNavigate();
 	const { token, user } = useAuth();
 
 	const [post, setPost] = useState(null);
@@ -607,6 +651,7 @@ export default function PostView() {
 	const [replyContent, setReplyContent] = useState("");
 	const [replyError, setReplyError] = useState(null);
 	const [replySubmitting, setReplySubmitting] = useState(false);
+	const [deletingPost, setDeletingPost] = useState(false);
 
 	const codeLowlight = useMemo(() => createCodeLowlight(), []);
 
@@ -686,6 +731,38 @@ export default function PostView() {
 		return typeof candidate === "string" ? candidate : candidate.toString?.() || null;
 	}, [user]);
 	const postId = post?.id || post?._id || null;
+	const postSlug = post?.slug || null;
+
+	const postAuthorId = useMemo(() => {
+		const candidates = [
+			post?.author?._id,
+			post?.author?.id,
+			post?.authorId,
+		];
+
+		for (const value of candidates) {
+			if (!value) {
+				continue;
+			}
+			if (typeof value === "string" && value.trim()) {
+				return value.trim();
+			}
+			if (typeof value === "object" && typeof value.toString === "function") {
+				const stringValue = value.toString();
+				if (stringValue && stringValue !== "[object Object]") {
+					return stringValue;
+				}
+			}
+		}
+
+		return null;
+	}, [post]);
+
+	const canManagePost = Boolean(
+		currentUserId &&
+		postAuthorId &&
+		currentUserId === postAuthorId
+	);
 
 	const coverImageSrc = useMemo(() => {
 		if (!post) return null;
@@ -741,7 +818,8 @@ export default function PostView() {
 			}
 
 			const payload = await response.json();
-			setComments(Array.isArray(payload?.items) ? payload.items : []);
+			const items = Array.isArray(payload?.items) ? payload.items : [];
+			setComments(sortCommentThread(items));
 		} catch (commentError) {
 			console.warn(commentError);
 		} finally {
@@ -758,7 +836,8 @@ export default function PostView() {
 	}, [fetchComments]);
 
 	const handleClap = useCallback(async () => {
-		if (!isAuthenticated) {
+		if (!isAuthenticated || !token) {
+			setError("Sign in to clap for stories");
 			return;
 		}
 
@@ -795,6 +874,84 @@ export default function PostView() {
 			setClapping(false);
 		}
 	}, [clapping, clapCount, id, isAuthenticated, post, token]);
+
+	const handleEditPost = useCallback(() => {
+		if (!canManagePost) {
+			setError("You can only edit your own story.");
+			return;
+		}
+
+		if (!postId && !postSlug) {
+			setError("Unable to identify this story.");
+			return;
+		}
+
+		navigate("/write", {
+			state: {
+				mode: "edit",
+				postId: postId || postSlug,
+				postSlug,
+			},
+		});
+	}, [canManagePost, navigate, postId, postSlug]);
+
+	const handleDeletePost = useCallback(async () => {
+		if (deletingPost) {
+			return;
+		}
+
+		if (!canManagePost) {
+			setError("You can only delete your own story.");
+			return;
+		}
+
+		const identifier = postSlug || postId;
+		if (!identifier) {
+			setError("Unable to identify this story.");
+			return;
+		}
+
+		if (!token) {
+			setError("Sign in to manage your stories.");
+			return;
+		}
+
+		const confirmed =
+			typeof window !== "undefined"
+				? window.confirm("Delete this story? This action cannot be undone.")
+				: true;
+
+		if (!confirmed) {
+			return;
+		}
+
+		setDeletingPost(true);
+		setError(null);
+
+		try {
+			const response = await fetch(
+				`${API_BASE_URL}/api/posts/${encodeURIComponent(identifier)}`,
+				{
+					method: "DELETE",
+					headers: {
+						Authorization: `Bearer ${token}`,
+					},
+				}
+			);
+
+			const payload = await response.json().catch(() => ({}));
+
+			if (!response.ok) {
+				throw new Error(payload?.error || "Unable to delete story.");
+			}
+
+			navigate("/", { replace: true, state: { message: "Story deleted." } });
+		} catch (deleteError) {
+			console.error(deleteError);
+			setError(deleteError.message || "Failed to delete story.");
+			setDeletingPost(false);
+		}
+	}, [canManagePost, deletingPost, navigate, postId, postSlug, token]);
 
 	const handleSubmitComment = useCallback(
 		async (event) => {
@@ -1033,6 +1190,10 @@ export default function PostView() {
 					isAuthenticated={isAuthenticated}
 					onClap={handleClap}
 					clapping={clapping}
+					canManage={canManagePost}
+					onEdit={handleEditPost}
+					onDelete={handleDeletePost}
+					manageBusy={deletingPost}
 				/>
 
 				{coverImageSrc && (

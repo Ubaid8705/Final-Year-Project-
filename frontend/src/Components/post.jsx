@@ -124,12 +124,14 @@ const Post = ({
   onShowLess,
   onActionFeedback,
   canEdit = false,
+  onDeletePost,
 }) => {
   const { token, user } = useAuth();
   const navigate = useNavigate();
   const [menuOpen, setMenuOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [hiding, setHiding] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const menuRef = useRef(null);
 
   const safePost = useMemo(() => post || {}, [post]);
@@ -461,6 +463,56 @@ const Post = ({
     [allowEdit, navigate, onActionFeedback, postId, postSlug]
   );
 
+  const handleDeletePost = useCallback(
+    (event) => {
+      event?.stopPropagation();
+      event?.preventDefault();
+
+      if (deleting) {
+        return;
+      }
+
+      if (!allowEdit) {
+        setMenuOpen(false);
+        return;
+      }
+
+      if (!postId && !postSlug) {
+        onActionFeedback?.("Unable to identify this story for deletion.", "error");
+        setMenuOpen(false);
+        return;
+      }
+
+      const confirmed = typeof window !== "undefined" ? window.confirm("Delete this story?") : true;
+      if (!confirmed) {
+        return;
+      }
+
+      if (typeof onDeletePost !== "function") {
+        onActionFeedback?.("Deletion is not available right now.", "error");
+        setMenuOpen(false);
+        return;
+      }
+
+      setDeleting(true);
+      Promise.resolve(onDeletePost(safePost))
+        .then((result) => {
+          if (result && result.error) {
+            onActionFeedback?.(result.error, "error");
+          }
+        })
+        .catch((error) => {
+          console.error(error);
+          onActionFeedback?.("Unable to delete this story.", "error");
+        })
+        .finally(() => {
+          setDeleting(false);
+          setMenuOpen(false);
+        });
+    },
+    [allowEdit, deleting, onActionFeedback, onDeletePost, postId, postSlug, safePost]
+  );
+
   return (
     <article
       className={classList(
@@ -557,6 +609,16 @@ const Post = ({
                       <li role="presentation">
                         <button type="button" role="menuitem" onClick={handleEditPost}>
                           Edit story
+                        </button>
+                      </li>
+                      <li role="presentation">
+                        <button
+                          type="button"
+                          role="menuitem"
+                          onClick={handleDeletePost}
+                          disabled={deleting}
+                        >
+                          {deleting ? "Deleting…" : "Delete story"}
                         </button>
                       </li>
                       <li className="post-card__actions-menu-divider" role="separator" aria-hidden="true" />

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import Post from "../Components/post";
 import { useAuth } from "../contexts/AuthContext";
 import { API_BASE_URL } from "../config";
@@ -137,6 +137,82 @@ const Profile = () => {
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [bioWordCount, setBioWordCount] = useState(0);
   const [bioLimitReached, setBioLimitReached] = useState(false);
+
+  const handleCardFeedback = useCallback((message, type = "info") => {
+    if (!message) {
+      setFeedback(null);
+      return;
+    }
+    setFeedback({ type, message });
+  }, []);
+
+  const resolvePostDeletionTarget = useCallback((post) => {
+    if (!post) {
+      return "";
+    }
+
+    const candidates = [post._id, post.id, post.metadata?.id, post.slug];
+    for (const value of candidates) {
+      if (!value) {
+        continue;
+      }
+      if (typeof value === "string" && value.trim()) {
+        return value.trim();
+      }
+      if (typeof value === "object" && typeof value.toString === "function") {
+        const stringValue = value.toString();
+        if (stringValue && stringValue !== "[object Object]") {
+          return stringValue;
+        }
+      }
+    }
+
+    return "";
+  }, []);
+
+  const handleDeleteOwnPost = useCallback(
+    async (post) => {
+      const target = resolvePostDeletionTarget(post);
+
+      if (!target) {
+        const message = "Unable to identify this story.";
+        handleCardFeedback(message, "error");
+        return { success: false, error: message };
+      }
+
+      if (!token) {
+        const message = "Sign in to manage your stories.";
+        handleCardFeedback(message, "error");
+        return { success: false, error: message };
+      }
+
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/posts/${encodeURIComponent(target)}`, {
+          method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        const payload = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+          throw new Error(payload?.error || "Unable to delete story.");
+        }
+
+        setPosts((current) => current.filter((item) => resolvePostDeletionTarget(item) !== target));
+        handleCardFeedback("Story deleted.", "success");
+
+        return { success: true };
+      } catch (requestError) {
+        console.error(requestError);
+        const message = requestError.message || "Unable to delete story.";
+        handleCardFeedback(message, "error");
+        return { success: false, error: message };
+      }
+    },
+    [handleCardFeedback, resolvePostDeletionTarget, token]
+  );
 
   const initializeEditForm = useCallback(() => {
     if (!viewingOwnProfile) {
@@ -859,6 +935,18 @@ const Profile = () => {
 
   const followerCount = stats?.followers ?? 0;
   const followingCount = stats?.following ?? 0;
+  const profileSlug = profile?.username || profileUsername || authUser?.username || "";
+  const canNavigateToConnections = viewingOwnProfile || Boolean(profileSlug);
+  const followersLink = viewingOwnProfile
+    ? "/profile/followers"
+    : profileSlug
+    ? `/u/${profileSlug}/followers`
+    : "#";
+  const followingLink = viewingOwnProfile
+    ? "/profile/following"
+    : profileSlug
+    ? `/u/${profileSlug}/following`
+    : "#";
 
   const tabs = useMemo(() => {
     const base = [{ id: "home", label: viewingOwnProfile ? "Home" : "Stories" }];
@@ -917,12 +1005,24 @@ const Profile = () => {
                 <p className="profile-header-card__intro">{bio}</p>
                 <div className="profile-header-card__meta">
                   <span>{pronouns}</span>
-                  <span>
-                    <strong>{formatNumber(followerCount)}</strong> follower{followerCount === 1 ? "" : "s"}
-                  </span>
-                  <span>
-                    <strong>{formatNumber(followingCount)}</strong> following
-                  </span>
+                  {canNavigateToConnections ? (
+                    <Link to={followersLink} className="profile-header-card__meta-link">
+                      <strong>{formatNumber(followerCount)}</strong> follower{followerCount === 1 ? "" : "s"}
+                    </Link>
+                  ) : (
+                    <span>
+                      <strong>{formatNumber(followerCount)}</strong> follower{followerCount === 1 ? "" : "s"}
+                    </span>
+                  )}
+                  {canNavigateToConnections ? (
+                    <Link to={followingLink} className="profile-header-card__meta-link">
+                      <strong>{formatNumber(followingCount)}</strong> following
+                    </Link>
+                  ) : (
+                    <span>
+                      <strong>{formatNumber(followingCount)}</strong> following
+                    </span>
+                  )}
                   {joinedAt && <span>Joined {joinedAt.toLocaleDateString()}</span>}
                 </div>
               </div>
@@ -1018,6 +1118,8 @@ const Profile = () => {
                     post={post}
                     variant="profile"
                     canEdit={viewingOwnProfile}
+                    onActionFeedback={handleCardFeedback}
+                    onDeletePost={viewingOwnProfile ? handleDeleteOwnPost : undefined}
                   />
                 ))}
               </>
@@ -1041,6 +1143,7 @@ const Profile = () => {
                     variant="profile"
                     isSaved
                     canEdit={false}
+                    onActionFeedback={handleCardFeedback}
                   />
                 ))}
               </>

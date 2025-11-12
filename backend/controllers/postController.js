@@ -716,16 +716,25 @@ export const listPosts = async (req, res) => {
       const followedIds = relationships
         .map((rel) => rel.following)
         .filter(Boolean)
-        .map((id) => id.toString());
+        .map((id) => id.toString())
+        .filter((id) => id && id !== viewerId.toString());
 
-      const uniqueIds = new Set(followedIds);
-      uniqueIds.add(viewerId.toString());
+      const uniqueIds = Array.from(new Set(followedIds));
 
-      if (uniqueIds.size > 0) {
-        filter.author = {
-          $in: Array.from(uniqueIds).map((id) => new mongoose.Types.ObjectId(id)),
-        };
+      if (uniqueIds.length === 0) {
+        return res.json({
+          items: [],
+          pagination: {
+            total: 0,
+            page: Number(page) || 1,
+            limit: numericLimit,
+          },
+        });
       }
+
+      filter.author = {
+        $in: uniqueIds.map((id) => new mongoose.Types.ObjectId(id)),
+      };
     }
 
     const authorMatchesViewer =

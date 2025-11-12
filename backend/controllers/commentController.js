@@ -51,6 +51,24 @@ const buildThread = (comments) => {
   const lookup = new Map();
   const roots = [];
 
+  const sortDescendingByCreatedAt = (nodes) => {
+    if (!Array.isArray(nodes) || nodes.length === 0) {
+      return;
+    }
+
+    nodes.sort((a, b) => {
+      const timeA = new Date(a.createdAt || 0).getTime();
+      const timeB = new Date(b.createdAt || 0).getTime();
+      return timeB - timeA;
+    });
+
+    nodes.forEach((node) => {
+      if (Array.isArray(node.replies) && node.replies.length > 0) {
+        sortDescendingByCreatedAt(node.replies);
+      }
+    });
+  };
+
   comments.forEach((comment) => {
     lookup.set(comment._id.toString(), { ...buildCommentResponse(comment), replies: [] });
   });
@@ -66,6 +84,7 @@ const buildThread = (comments) => {
     }
   });
 
+  sortDescendingByCreatedAt(roots);
   return roots;
 };
 
@@ -84,7 +103,7 @@ export const getComments = async (req, res) => {
     }
 
     const comments = await Comment.find({ postId: objectId, isVisible: true })
-      .sort({ createdAt: 1 })
+      .sort({ createdAt: -1 })
       .populate("userId", "username name avatar")
       .lean();
 

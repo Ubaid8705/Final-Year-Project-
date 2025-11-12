@@ -66,6 +66,19 @@ const getPostApiId = (item) => {
   return "";
 };
 
+const getPostDeletionTarget = (item) => {
+  const id = getPostApiId(item);
+  if (id) {
+    return id;
+  }
+
+  if (item?.slug && typeof item.slug === "string") {
+    return item.slug.trim();
+  }
+
+  return "";
+};
+
 const resolveScope = (selection) => {
   if (selection === "featured") {
     return "featured";
@@ -305,6 +318,64 @@ const PostsFeed = ({ selection = "forYou" }) => {
     [token, hasMore, loadMore, handleActionFeedback]
   );
 
+  const handleDeletePost = useCallback(
+    async (post) => {
+      const target = getPostDeletionTarget(post);
+
+      if (!target) {
+        const message = "Unable to identify this story.";
+        handleActionFeedback(message, "error");
+        return { success: false, error: message };
+      }
+
+      if (!token) {
+        const message = "Sign in to manage your stories.";
+        handleActionFeedback(message, "error");
+        return { success: false, error: message };
+      }
+
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/posts/${encodeURIComponent(target)}`, {
+          method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        const payload = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+          throw new Error(payload?.error || "Unable to delete story.");
+        }
+
+        setPosts((current) => current.filter((item) => getPostDeletionTarget(item) !== target));
+        setSavedPostIds((current) => {
+          const next = new Set(current);
+          next.delete(target);
+          const canonicalId = getPostApiId(post);
+          if (canonicalId && canonicalId !== target) {
+            next.delete(canonicalId);
+          }
+          return next;
+        });
+
+        handleActionFeedback("Story deleted.", "success");
+
+        if (hasMore && !loadingRef.current) {
+          loadMore();
+        }
+
+        return { success: true };
+      } catch (requestError) {
+        console.error(requestError);
+        const message = requestError.message || "Unable to delete story.";
+        handleActionFeedback(message, "error");
+        return { success: false, error: message };
+      }
+    },
+    [token, handleActionFeedback, hasMore, loadMore]
+  );
+
   useEffect(() => {
     if (!token) {
       setSavedPostIds(new Set());
@@ -443,10 +514,13 @@ const PostsFeed = ({ selection = "forYou" }) => {
           <Post
             key={key}
             post={post}
+            variant={selection === "featured" ? "featured" : "default"}
             isSaved={saved}
             onToggleSave={handleToggleSave}
             onShowLess={handleHidePost}
             onActionFeedback={handleActionFeedback}
+            onDeletePost={handleDeletePost}
+            canEdit
           />
         );
       })}

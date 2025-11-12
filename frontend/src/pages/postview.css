@@ -241,6 +241,8 @@
   display: flex;
   align-items: center;
   gap: 12px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .post-meta-btn {
@@ -259,6 +261,24 @@
 .post-meta-btn:disabled {
   cursor: not-allowed;
   color: #d1d5db;
+}
+
+.post-meta-manage {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.post-meta-btn--danger {
+  color: #dc2626;
+}
+
+.post-meta-btn--danger:hover {
+  color: #b91c1c;
+}
+
+.post-meta-btn--danger:disabled {
+  color: #fca5a5;
 }
 
 .post-meta-response-count {
@@ -754,7 +774,9 @@
 .post-meta-right {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .post-meta-actions {

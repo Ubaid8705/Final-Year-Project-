@@ -7,6 +7,7 @@ import PostView from './pages/postview';
 import Write from './pages/write';
 import LandingPage from './pages/landingpage';
 import Profile from './pages/profile';
+import { FollowersPage, FollowingPage } from './pages/connections';
 import OAuthCallback from './pages/oauth-callback';
 import Notifications from './pages/notifications';
 import ResetPassword from './pages/reset-password';
@@ -64,9 +65,33 @@ export const routes = [
       </ProtectedRoute>
     )
   },
+  { path: '/profile/followers', element: (
+      <ProtectedRoute>
+        <FollowersPage />
+      </ProtectedRoute>
+    )
+  },
+  { path: '/profile/following', element: (
+      <ProtectedRoute>
+        <FollowingPage />
+      </ProtectedRoute>
+    )
+  },
   { path: '/u/:username', element: (
       <ProtectedRoute>
         <Profile />
+      </ProtectedRoute>
+    )
+  },
+  { path: '/u/:username/followers', element: (
+      <ProtectedRoute>
+        <FollowersPage />
+      </ProtectedRoute>
+    )
+  },
+  { path: '/u/:username/following', element: (
+      <ProtectedRoute>
+        <FollowingPage />
       </ProtectedRoute>
     )
   },
