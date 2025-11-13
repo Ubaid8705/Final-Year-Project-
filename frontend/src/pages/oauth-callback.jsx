@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 
@@ -26,52 +26,89 @@ const OAuthCallback = () => {
   const navigate = useNavigate();
   const { completeOAuthLogin, user, token, loading } = useAuth();
   const [status, setStatus] = useState("processing");
-  const [redirected, setRedirected] = useState(false);
+  const processedSearchRef = useRef(null);
+  const redirectRef = useRef(false);
 
+  const triggerRedirect = useCallback(() => {
+    if (redirectRef.current) {
+      return;
+    }
+
+    redirectRef.current = true;
+    if (
+      typeof window !== "undefined" &&
+      typeof window.requestAnimationFrame === "function"
+    ) {
+      window.requestAnimationFrame(() => {
+        navigate("/", { replace: true });
+      });
+    } else {
+      setTimeout(() => {
+        navigate("/", { replace: true });
+      }, 0);
+    }
+
+    setTimeout(() => {
+      if (typeof window !== "undefined" && window.location.pathname !== "/") {
+        window.location.replace("/");
+      }
+    }, 600);
+  }, [navigate]);
+
+  //eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     let isMounted = true;
 
-    const params = new URLSearchParams(location.search);
-    const tokenParam = params.get("token");
-    const rawUser = params.get("user");
+    if (processedSearchRef.current === location.search) {
+      return undefined;
+    }
 
-    if (!tokenParam || !rawUser) {
-      if (isMounted) {
-        setStatus("error");
+    processedSearchRef.current = location.search;
+
+    const processOAuth = async () => {
+      const params = new URLSearchParams(location.search);
+      const tokenParam = params.get("token");
+      const rawUser = params.get("user");
+
+      if (!tokenParam || !rawUser) {
+        if (isMounted) setStatus("error");
+        return;
       }
-      return;
-    }
 
-    const parsedUser = parseUserParam(rawUser);
-
-    if (!parsedUser) {
-      if (isMounted) {
-        setStatus("error");
+      const parsedUser = parseUserParam(rawUser);
+      if (!parsedUser) {
+        if (isMounted) setStatus("error");
+        return;
       }
-      return;
-    }
 
-  const result = completeOAuthLogin({ token: tokenParam, user: parsedUser });
+      console.log("Parsed OAuth user:", parsedUser);
 
-    if (result?.error) {
-      if (isMounted) {
-        setStatus("error");
+      const result = await completeOAuthLogin({
+        token: tokenParam,
+        user: parsedUser,
+      });
+
+      if (result?.error) {
+        if (isMounted) setStatus("error");
+        return;
       }
-      return;
-    }
 
-    if (isMounted) {
-      setStatus("success");
-    }
+      if (isMounted) {
+        setStatus("success");
+        console.log("OAuth login completed successfully");
+        triggerRedirect();
+      }
+    };
 
-    // Delay navigation a tick to ensure React processes context updates
+    processOAuth();
+
     return () => {
       isMounted = false;
     };
-  }, [location.search, completeOAuthLogin]);
+  }, [location.search, completeOAuthLogin, triggerRedirect]);
 
   useEffect(() => {
-    if (redirected) {
+    if (redirectRef.current) {
       return;
     }
 
@@ -83,16 +120,16 @@ const OAuthCallback = () => {
       return;
     }
 
-    if (!user || !token) {
-      return;
+    if (user && token) {
+      triggerRedirect();
     }
-
-    setRedirected(true);
-    navigate("/", { replace: true });
-  }, [status, loading, user, token, redirected, navigate]);
+  }, [status, loading, user, token, triggerRedirect]);
 
   return (
-    <div className="page-container" style={{ textAlign: "center", padding: "80px 20px" }}>
+    <div
+      className="page-container"
+      style={{ textAlign: "center", padding: "80px 20px" }}
+    >
       {status === "processing" ? (
         <p>Signing you in...</p>
       ) : status === "success" ? (

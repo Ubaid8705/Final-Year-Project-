@@ -1280,6 +1280,18 @@ export const listAuthorPosts = async (req, res) => {
       return res.status(403).json({ error: "This profile is private." });
     }
 
+    const parsePositiveInteger = (value, fallback) => {
+      const parsed = parseInt(value, 10);
+      if (Number.isFinite(parsed) && parsed > 0) {
+        return parsed;
+      }
+      return fallback;
+    };
+
+    const page = Math.max(1, parsePositiveInteger(req.query.page, 1));
+    const limit = Math.min(24, parsePositiveInteger(req.query.limit, 10));
+    const skip = (page - 1) * limit;
+
     let visibilityFilter = {};
     if (!isSelf) {
       if (isFollower) {
@@ -1289,14 +1301,24 @@ export const listAuthorPosts = async (req, res) => {
       }
     }
 
-    const posts = await Post.find({
+    const baseFilter = {
       author: author._id,
       isPublished: true,
       ...visibilityFilter,
-    })
-      .sort({ publishedAt: -1, createdAt: -1 })
-      .populate("author", "username name avatar bio membershipStatus")
-      .lean();
+    };
+
+    const [posts, total] = await Promise.all([
+      Post.find(baseFilter)
+        .sort({ publishedAt: -1, createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .populate("author", "username name avatar bio membershipStatus")
+        .lean(),
+      Post.countDocuments(baseFilter),
+    ]);
+
+    const hydrated = posts.map(hydratePost);
+    const hasMore = skip + hydrated.length < total;
 
     res.json({
       author: {
@@ -1307,7 +1329,14 @@ export const listAuthorPosts = async (req, res) => {
         bio: author.bio,
         isPremium: Boolean(author.membershipStatus),
       },
-      posts: posts.map(hydratePost),
+      items: hydrated,
+      posts: hydrated,
+      pagination: {
+        total,
+        page,
+        limit,
+        hasMore,
+      },
     });
   } catch (error) {
     res.status(500).json({ error: "Failed to fetch author posts" });
@@ -1320,12 +1349,42 @@ export const listDrafts = async (req, res) => {
       return res.status(401).json({ error: "Authentication required" });
     }
 
-    const drafts = await Post.find({ author: req.user._id, isPublished: false })
-      .sort({ updatedAt: -1 })
-  .populate("author", "username name avatar bio membershipStatus")
-      .lean();
+    const parsePositiveInteger = (value, fallback) => {
+      const parsed = parseInt(value, 10);
+      if (Number.isFinite(parsed) && parsed > 0) {
+        return parsed;
+      }
+      return fallback;
+    };
 
-    res.json({ items: drafts.map(hydratePost) });
+    const page = Math.max(1, parsePositiveInteger(req.query.page, 1));
+    const limit = Math.min(24, parsePositiveInteger(req.query.limit, 10));
+    const skip = (page - 1) * limit;
+
+    const baseFilter = { author: req.user._id, isPublished: false };
+
+    const [drafts, total] = await Promise.all([
+      Post.find(baseFilter)
+        .sort({ updatedAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .populate("author", "username name avatar bio membershipStatus")
+        .lean(),
+      Post.countDocuments(baseFilter),
+    ]);
+
+    const hydrated = drafts.map(hydratePost);
+    const hasMore = skip + hydrated.length < total;
+
+    res.json({
+      items: hydrated,
+      pagination: {
+        total,
+        page,
+        limit,
+        hasMore,
+      },
+    });
   } catch (error) {
     res.status(500).json({ error: "Failed to fetch drafts" });
   }

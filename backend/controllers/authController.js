@@ -26,7 +26,7 @@ const buildOAuthRedirectUrl = (user) => {
     user: JSON.stringify(safeUser),
   });
 
-  return `${process.env.CLIENT_URL}/auth/callback?${params.toString()}`;
+ return `${process.env.CLIENT_URL}/oauth-callback?${params.toString()}`;
 };
 
 // Handle Google OAuth login

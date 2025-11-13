@@ -96,11 +96,16 @@ const readJson = async (response) => {
 
 const base64UrlDecode = (input) => {
   try {
-    const padded = `${input.replace(/-/g, "+").replace(/_/g, "/")}${"=".repeat((4 - (input.length % 4)) % 4)}`;
+    const padded = `${input.replace(/-/g, "+").replace(/_/g, "/")}${"=".repeat(
+      (4 - (input.length % 4)) % 4
+    )}`;
     if (typeof atob === "function") {
       return decodeURIComponent(
         Array.prototype.map
-          .call(atob(padded), (c) => `%${(`00${c.charCodeAt(0).toString(16)}`).slice(-2)}`)
+          .call(
+            atob(padded),
+            (c) => `%${`00${c.charCodeAt(0).toString(16)}`.slice(-2)}`
+          )
           .join("")
       );
     }
@@ -269,7 +274,7 @@ export const AuthProvider = ({ children }) => {
     clearAuth();
   };
 
-  const completeOAuthLogin = ({ token: nextToken, user: nextUser }) => {
+  const completeOAuthLogin = async ({ token: nextToken, user: nextUser }) => {
     if (!nextToken || !nextUser) {
       return { error: "Missing token or user details from OAuth response" };
     }
@@ -293,7 +298,12 @@ export const AuthProvider = ({ children }) => {
       return { error: "Unable to process user details from OAuth response" };
     }
 
-    return persistAuth(nextToken, resolvedUser);
+    const result = persistAuth(nextToken, resolvedUser);
+
+    // Wait a tick to allow React to flush state updates before consumers read them
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    return result;
   };
 
   const value = {

@@ -30,7 +30,7 @@ const userSchema = new mongoose.Schema({
   resetPasswordToken: String,
   resetPasswordExpires: Date,
   avatar: { type: String },
-  coverImage: { type: imageAssetSchema, default: null },
+  coverImage: imageAssetSchema,
   bio: { type: String, maxlength: 160 },
   pronouns: [{ type: String ,maxlength: 4}],
   hasSubdomain: { type: Boolean, default: false },

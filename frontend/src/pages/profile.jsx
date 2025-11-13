@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import Post from "../Components/post";
 import { useAuth } from "../contexts/AuthContext";
@@ -170,26 +170,72 @@ const arraysEqual = (first = [], second = []) => {
   return first.every((entry, index) => entry === second[index]);
 };
 
+
+const POSTS_PAGE_SIZE = 8;
+const DRAFTS_PAGE_SIZE = 8;
+
+const createFeedState = () => ({
+  items: [],
+  page: 0,
+  hasMore: true,
+  loading: false,
+  error: null,
+  initialized: false,
+});
 const Profile = () => {
   const { user: authUser, token, updateUser: updateStoredUser } = useAuth();
-  const { username: routeUsername } = useParams();
+  const { username: routeUsernameParam } = useParams();
 
-  const viewingOwnProfile = !routeUsername || routeUsername === authUser?.username;
-  const profileUsername = viewingOwnProfile ? authUser?.username : routeUsername;
+  const normalizedRouteUsername = useMemo(() => {
+    if (!routeUsernameParam || typeof routeUsernameParam !== "string") {
+      return "";
+    }
+    return routeUsernameParam.trim();
+  }, [routeUsernameParam]);
+
+  const normalizedAuthUsername = useMemo(() => {
+    if (!authUser?.username || typeof authUser.username !== "string") {
+      return "";
+    }
+    return authUser.username.trim();
+  }, [authUser?.username]);
+
+  const viewingOwnProfile =
+    !normalizedRouteUsername || normalizedRouteUsername === normalizedAuthUsername;
 
   const [activeTab, setActiveTab] = useState("home");
   const [profile, setProfile] = useState(null);
+
+  const profileUsername = useMemo(() => {
+    const profileCandidate =
+      typeof profile?.username === "string" ? profile.username.trim() : "";
+    if (viewingOwnProfile) {
+      return profileCandidate || normalizedAuthUsername || "";
+    }
+    return profileCandidate || normalizedRouteUsername;
+  }, [viewingOwnProfile, profile?.username, normalizedAuthUsername, normalizedRouteUsername]);
+
+  const profileUsernameSlug = useMemo(() => {
+    if (!profileUsername || typeof profileUsername !== "string") {
+      return "";
+    }
+    return profileUsername.trim();
+  }, [profileUsername]);
+
+  const encodedProfileUsername = useMemo(
+    () => (profileUsernameSlug ? encodeURIComponent(profileUsernameSlug) : ""),
+    [profileUsernameSlug]
+  );
   const [stats, setStats] = useState({ followers: 0, following: 0 });
   const [relationship, setRelationship] = useState(null);
   const [permissions, setPermissions] = useState(viewingOwnProfile ? OWN_PERMISSIONS : null);
-  const [posts, setPosts] = useState([]);
+  const [postsFeed, setPostsFeed] = useState(() => createFeedState());
+  const [draftFeed, setDraftFeed] = useState(() => createFeedState());
   const [savedPosts, setSavedPosts] = useState([]);
   const [savedFetched, setSavedFetched] = useState(false);
   const [loadingProfile, setLoadingProfile] = useState(true);
-  const [loadingPosts, setLoadingPosts] = useState(false);
   const [loadingLists, setLoadingLists] = useState(false);
   const [profileError, setProfileError] = useState(null);
-  const [postsError, setPostsError] = useState(null);
   const [listsError, setListsError] = useState(null);
   const [actionLoading, setActionLoading] = useState(null);
   const [feedback, setFeedback] = useState(null);
@@ -208,6 +254,8 @@ const Profile = () => {
   const [coverUpdating, setCoverUpdating] = useState(false);
   const [bioWordCount, setBioWordCount] = useState(0);
   const [bioLimitReached, setBioLimitReached] = useState(false);
+  const postsObserverRef = useRef(null);
+  const draftsObserverRef = useRef(null);
 
   const handleCardFeedback = useCallback((message, type = "info") => {
     if (!message) {
@@ -271,7 +319,14 @@ const Profile = () => {
           throw new Error(payload?.error || "Unable to delete story.");
         }
 
-        setPosts((current) => current.filter((item) => resolvePostDeletionTarget(item) !== target));
+        setPostsFeed((current) => ({
+          ...current,
+          items: current.items.filter((item) => resolvePostDeletionTarget(item) !== target),
+        }));
+        setDraftFeed((current) => ({
+          ...current,
+          items: current.items.filter((item) => resolvePostDeletionTarget(item) !== target),
+        }));
         handleCardFeedback("Story deleted.", "success");
 
         return { success: true };
@@ -520,18 +575,22 @@ const Profile = () => {
   }, [viewingOwnProfile]);
 
   useEffect(() => {
-    setActiveTab((current) => (!viewingOwnProfile && current === "lists" ? "home" : current));
+    if (viewingOwnProfile) {
+      return;
+    }
+
+    setActiveTab((current) => (current === "lists" || current === "drafts" ? "home" : current));
   }, [viewingOwnProfile]);
 
   useEffect(() => {
-    setPosts([]);
-    setPostsError(null);
+    setPostsFeed(createFeedState());
+    setDraftFeed(createFeedState());
     setSavedPosts([]);
     setSavedFetched(false);
     setListsError(null);
     setRelationship(null);
     setFeedback(null);
-  }, [profileUsername]);
+  }, [profileUsernameSlug, viewingOwnProfile]);
 
   const normalizePermissions = useCallback(
     (payloadPermissions) => {
@@ -552,7 +611,11 @@ const Profile = () => {
   );
 
   const fetchProfile = useCallback(async () => {
-    if (!token || !profileUsername) {
+    if (!token) {
+      return;
+    }
+
+    if (!viewingOwnProfile && !profileUsernameSlug) {
       return;
     }
 
@@ -561,7 +624,7 @@ const Profile = () => {
 
     const endpoint = viewingOwnProfile
       ? `${API_BASE_URL}/api/users/me`
-      : `${API_BASE_URL}/api/users/${profileUsername}`;
+      : `${API_BASE_URL}/api/users/${encodedProfileUsername}`;
 
     try {
       const response = await fetch(endpoint, {
@@ -587,7 +650,7 @@ const Profile = () => {
     } finally {
       setLoadingProfile(false);
     }
-  }, [token, profileUsername, viewingOwnProfile, normalizePermissions]);
+  }, [token, viewingOwnProfile, profileUsernameSlug, encodedProfileUsername, normalizePermissions]);
 
   const handleCoverUpload = useCallback(
     async (event) => {
@@ -723,14 +786,13 @@ const Profile = () => {
     if (!token) {
       return;
     }
-    if (viewingOwnProfile && !authUser?.username) {
+
+    if (!viewingOwnProfile && !profileUsernameSlug) {
       return;
     }
-    if (!profileUsername) {
-      return;
-    }
+
     fetchProfile();
-  }, [token, authUser?.username, profileUsername, viewingOwnProfile, fetchProfile]);
+  }, [token, viewingOwnProfile, profileUsernameSlug, fetchProfile]);
 
   const resolvedPermissions = useMemo(() => {
     if (viewingOwnProfile) {
@@ -739,49 +801,353 @@ const Profile = () => {
     return permissions || normalizePermissions(null);
   }, [permissions, normalizePermissions, viewingOwnProfile]);
 
-  const fetchPosts = useCallback(async () => {
-    if (!token || !profileUsername) {
+  const loadPostsFeed = useCallback(
+    async (pageOverride) => {
+      if (!token || !profileUsernameSlug) {
+        return;
+      }
+      if (!resolvedPermissions?.canViewPosts) {
+        return;
+      }
+
+      let nextPage = null;
+
+      setPostsFeed((current) => {
+        if (current.loading) {
+          nextPage = null;
+          return current;
+        }
+
+        const desiredPage =
+          typeof pageOverride === "number"
+            ? pageOverride
+            : current.initialized
+            ? current.page + 1
+            : 1;
+
+        if (!desiredPage) {
+          nextPage = null;
+          return current;
+        }
+
+        if (current.initialized && desiredPage <= current.page) {
+          nextPage = null;
+          return current;
+        }
+
+        if (current.initialized && !current.hasMore && desiredPage > current.page) {
+          nextPage = null;
+          return current;
+        }
+
+        nextPage = desiredPage;
+
+        return {
+          ...current,
+          loading: true,
+          error: null,
+          initialized: current.initialized || desiredPage === 1,
+        };
+      });
+
+      if (!nextPage) {
+        return;
+      }
+
+      const params = new URLSearchParams({
+        page: nextPage.toString(),
+        limit: POSTS_PAGE_SIZE.toString(),
+      });
+
+      try {
+        const response = await fetch(
+          `${API_BASE_URL}/api/posts/author/${encodedProfileUsername}?${params.toString()}`,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
+
+        const payload = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+          throw new Error(payload.error || "Failed to load stories");
+        }
+
+        const rawItems = Array.isArray(payload.items)
+          ? payload.items
+          : Array.isArray(payload.posts)
+          ? payload.posts
+          : [];
+        const normalizedItems = rawItems.filter(Boolean);
+        const hasMore =
+          typeof payload.pagination?.hasMore === "boolean"
+            ? payload.pagination.hasMore
+            : normalizedItems.length >= POSTS_PAGE_SIZE;
+
+        setPostsFeed((current) => ({
+          ...current,
+          items: nextPage === 1 ? normalizedItems : [...current.items, ...normalizedItems],
+          page: nextPage,
+          hasMore,
+          loading: false,
+          error: null,
+          initialized: true,
+        }));
+      } catch (error) {
+        setPostsFeed((current) => ({
+          ...current,
+          loading: false,
+          error: error.message || "Failed to load stories",
+          initialized: true,
+        }));
+      }
+    },
+    [token, profileUsernameSlug, encodedProfileUsername, resolvedPermissions?.canViewPosts]
+  );
+
+  const loadDraftFeed = useCallback(
+    async (pageOverride) => {
+      if (!token || !viewingOwnProfile) {
+        return;
+      }
+
+      let nextPage = null;
+
+      setDraftFeed((current) => {
+        if (current.loading) {
+          nextPage = null;
+          return current;
+        }
+
+        const desiredPage =
+          typeof pageOverride === "number"
+            ? pageOverride
+            : current.initialized
+            ? current.page + 1
+            : 1;
+
+        if (!desiredPage) {
+          nextPage = null;
+          return current;
+        }
+
+        if (current.initialized && desiredPage <= current.page) {
+          nextPage = null;
+          return current;
+        }
+
+        if (current.initialized && !current.hasMore && desiredPage > current.page) {
+          nextPage = null;
+          return current;
+        }
+
+        nextPage = desiredPage;
+
+        return {
+          ...current,
+          loading: true,
+          error: null,
+          initialized: current.initialized || desiredPage === 1,
+        };
+      });
+
+      if (!nextPage) {
+        return;
+      }
+
+      const params = new URLSearchParams({
+        page: nextPage.toString(),
+        limit: DRAFTS_PAGE_SIZE.toString(),
+      });
+
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/posts/drafts?${params.toString()}`,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
+
+        const payload = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+          throw new Error(payload.error || "Failed to load drafts");
+        }
+
+        const rawItems = Array.isArray(payload.items) ? payload.items : [];
+        const normalizedItems = rawItems.filter(Boolean);
+        const hasMore = Boolean(payload.pagination?.hasMore);
+
+        setDraftFeed((current) => ({
+          ...current,
+          items: nextPage === 1 ? normalizedItems : [...current.items, ...normalizedItems],
+          page: nextPage,
+          hasMore,
+          loading: false,
+          error: null,
+          initialized: true,
+        }));
+      } catch (error) {
+        setDraftFeed((current) => ({
+          ...current,
+          loading: false,
+          error: error.message || "Failed to load drafts",
+          initialized: true,
+        }));
+      }
+    },
+    [token, viewingOwnProfile]
+  );
+
+  const handleRetryPosts = useCallback(() => {
+    if (postsFeed.loading) {
+      return;
+    }
+    const nextPage = postsFeed.items.length === 0 ? 1 : postsFeed.page + 1;
+    loadPostsFeed(nextPage);
+  }, [postsFeed.loading, postsFeed.items.length, postsFeed.page, loadPostsFeed]);
+
+  const handleRetryDrafts = useCallback(() => {
+    if (draftFeed.loading) {
+      return;
+    }
+    const nextPage = draftFeed.items.length === 0 ? 1 : draftFeed.page + 1;
+    loadDraftFeed(nextPage);
+  }, [draftFeed.loading, draftFeed.items.length, draftFeed.page, loadDraftFeed]);
+
+  useEffect(() => {
+    if (loadingProfile) {
       return;
     }
 
-    setLoadingPosts(true);
-    setPostsError(null);
-
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/posts/author/${profileUsername}`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+    if (!resolvedPermissions?.canViewPosts) {
+      const key = resolvedPermissions?.reason;
+      const message = key ? permissionMessages[key] || "Stories are hidden." : "Stories are hidden.";
+      setPostsFeed({
+        ...createFeedState(),
+        initialized: true,
+        hasMore: false,
+        error: message,
       });
+      return;
+    }
 
-      const payload = await response.json().catch(() => ({}));
-
-      if (!response.ok) {
-        throw new Error(payload.error || "Failed to load stories");
+    setPostsFeed((current) => {
+      if (!current.error) {
+        return current;
       }
 
-      setPosts(Array.isArray(payload.posts) ? payload.posts : []);
-    } catch (error) {
-      setPosts([]);
-      setPostsError(error.message || "Failed to load stories");
-    } finally {
-      setLoadingPosts(false);
-    }
-  }, [token, profileUsername]);
+      const permissionErrorMessages = [
+        permissionMessages.blocked,
+        permissionMessages["self-blocked"],
+        permissionMessages.private,
+        "Stories are hidden.",
+      ].filter(Boolean);
+
+      if (permissionErrorMessages.includes(current.error)) {
+        return createFeedState();
+      }
+
+      return current;
+    });
+  }, [loadingProfile, resolvedPermissions]);
 
   useEffect(() => {
     if (loadingProfile) {
       return;
     }
     if (!resolvedPermissions?.canViewPosts) {
-      const key = resolvedPermissions?.reason;
-      setPosts([]);
-      setPostsError(key ? permissionMessages[key] || "Stories are hidden." : "Stories are hidden.");
-      setLoadingPosts(false);
       return;
     }
-    fetchPosts();
-  }, [resolvedPermissions, fetchPosts, loadingProfile]);
+    if (!profileUsernameSlug) {
+      return;
+    }
+    if (postsFeed.initialized || postsFeed.loading) {
+      return;
+    }
+    loadPostsFeed(1);
+  }, [
+    loadingProfile,
+    resolvedPermissions?.canViewPosts,
+    postsFeed.initialized,
+    postsFeed.loading,
+    profileUsernameSlug,
+    loadPostsFeed,
+  ]);
+
+  useEffect(() => {
+    if (activeTab !== "drafts") {
+      return;
+    }
+    if (!viewingOwnProfile || !token) {
+      return;
+    }
+    if (draftFeed.initialized || draftFeed.loading) {
+      return;
+    }
+    loadDraftFeed(1);
+  }, [activeTab, viewingOwnProfile, token, draftFeed.initialized, draftFeed.loading, loadDraftFeed]);
+
+  useEffect(() => {
+    if (activeTab !== "home") {
+      return undefined;
+    }
+    if (!resolvedPermissions?.canViewPosts) {
+      return undefined;
+    }
+
+    const sentinel = postsObserverRef.current;
+    if (!sentinel) {
+      return undefined;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            loadPostsFeed();
+          }
+        });
+      },
+      { rootMargin: "200px" }
+    );
+
+    observer.observe(sentinel);
+
+    return () => observer.disconnect();
+  }, [activeTab, resolvedPermissions?.canViewPosts, loadPostsFeed]);
+
+  useEffect(() => {
+    if (activeTab !== "drafts") {
+      return undefined;
+    }
+    if (!viewingOwnProfile) {
+      return undefined;
+    }
+
+    const sentinel = draftsObserverRef.current;
+    if (!sentinel) {
+      return undefined;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            loadDraftFeed();
+          }
+        });
+      },
+      { rootMargin: "200px" }
+    );
+
+    observer.observe(sentinel);
+
+    return () => observer.disconnect();
+  }, [activeTab, viewingOwnProfile, loadDraftFeed]);
 
   const fetchSavedPosts = useCallback(async () => {
     if (!token) {
@@ -833,11 +1199,17 @@ const Profile = () => {
   }, [fetchProfile]);
 
   const handleShareProfile = useCallback(async () => {
-    const targetUsername = viewingOwnProfile ? authUser?.username : profileUsername;
-    if (!targetUsername) {
+    const origin = typeof window !== "undefined" && window.location?.origin ? window.location.origin : "";
+    if (!origin) {
       return;
     }
-    const url = `${window.location.origin}${viewingOwnProfile ? "/profile" : `/u/${targetUsername}`}`;
+
+    const sharePath =
+      viewingOwnProfile || !profileUsernameSlug
+        ? "/profile"
+        : `/u/${encodeURIComponent(profileUsernameSlug)}`;
+
+    const url = `${origin}${sharePath}`;
 
     try {
       if (navigator.clipboard?.writeText) {
@@ -857,7 +1229,7 @@ const Profile = () => {
     } catch (error) {
       setFeedback({ type: "error", message: error.message || "Unable to copy link." });
     }
-  }, [authUser?.username, profileUsername, viewingOwnProfile]);
+  }, [profileUsernameSlug, viewingOwnProfile]);
 
   const handleEditSubmit = useCallback(
     async (event) => {
@@ -997,7 +1369,7 @@ const Profile = () => {
   );
 
   const handleFollowToggle = useCallback(async () => {
-    if (viewingOwnProfile || !profileUsername) {
+    if (viewingOwnProfile || !profileUsernameSlug) {
       return;
     }
     const currentlyFollowing = Boolean(relationship?.isFollowing);
@@ -1005,7 +1377,7 @@ const Profile = () => {
 
     setActionLoading("follow");
     try {
-      const response = await fetch(`${API_BASE_URL}/api/users/${profileUsername}/follow`, {
+      const response = await fetch(`${API_BASE_URL}/api/users/${encodedProfileUsername}/follow`, {
         method,
         headers: {
           Authorization: `Bearer ${token}`,
@@ -1034,7 +1406,7 @@ const Profile = () => {
           canViewPosts: true,
           reason: null,
         }));
-        fetchPosts();
+        setPostsFeed(createFeedState());
       }
 
       setFeedback({
@@ -1046,10 +1418,10 @@ const Profile = () => {
     } finally {
       setActionLoading(null);
     }
-  }, [viewingOwnProfile, profileUsername, relationship, token, resolvedPermissions, fetchPosts]);
+  }, [viewingOwnProfile, profileUsernameSlug, encodedProfileUsername, relationship, token, resolvedPermissions]);
 
   const handleBlockToggle = useCallback(async () => {
-    if (viewingOwnProfile || !profileUsername) {
+    if (viewingOwnProfile || !profileUsernameSlug) {
       return;
     }
 
@@ -1058,7 +1430,7 @@ const Profile = () => {
 
     setActionLoading("block");
     try {
-      const response = await fetch(`${API_BASE_URL}/api/users/${profileUsername}/block`, {
+      const response = await fetch(`${API_BASE_URL}/api/users/${encodedProfileUsername}/block`, {
         method,
         headers: {
           Authorization: `Bearer ${token}`,
@@ -1086,8 +1458,12 @@ const Profile = () => {
           canViewLists: false,
           reason: "self-blocked",
         });
-        setPosts([]);
-        setPostsError(permissionMessages["self-blocked"]);
+        setPostsFeed({
+          ...createFeedState(),
+          initialized: true,
+          hasMore: false,
+          error: permissionMessages["self-blocked"],
+        });
       } else {
         fetchProfile();
       }
@@ -1101,7 +1477,7 @@ const Profile = () => {
     } finally {
       setActionLoading(null);
     }
-  }, [viewingOwnProfile, profileUsername, relationship, token, fetchProfile]);
+  }, [viewingOwnProfile, profileUsernameSlug, encodedProfileUsername, relationship, token, fetchProfile]);
 
   useEffect(() => {
     if (!feedback) {
@@ -1143,22 +1519,27 @@ const Profile = () => {
 
   const followerCount = stats?.followers ?? 0;
   const followingCount = stats?.following ?? 0;
-  const profileSlug = profile?.username || profileUsername || authUser?.username || "";
-  const canNavigateToConnections = viewingOwnProfile || Boolean(profileSlug);
+  const profileSlugRaw =
+    (typeof profile?.username === "string" && profile.username.trim()) ||
+    profileUsernameSlug ||
+    normalizedAuthUsername;
+  const encodedProfileSlug = profileSlugRaw ? encodeURIComponent(profileSlugRaw) : "";
+  const canNavigateToConnections = viewingOwnProfile || Boolean(encodedProfileSlug);
   const followersLink = viewingOwnProfile
     ? "/profile/followers"
-    : profileSlug
-    ? `/u/${profileSlug}/followers`
+    : encodedProfileSlug
+    ? `/u/${encodedProfileSlug}/followers`
     : "#";
   const followingLink = viewingOwnProfile
     ? "/profile/following"
-    : profileSlug
-    ? `/u/${profileSlug}/following`
+    : encodedProfileSlug
+    ? `/u/${encodedProfileSlug}/following`
     : "#";
 
   const tabs = useMemo(() => {
     const base = [{ id: "home", label: viewingOwnProfile ? "Home" : "Stories" }];
     if (viewingOwnProfile) {
+      base.push({ id: "drafts", label: "Drafts" });
       base.push({ id: "lists", label: "Reading list" });
     }
     base.push({ id: "about", label: "About" });
@@ -1337,20 +1718,34 @@ const Profile = () => {
           <section className="profile-feed" aria-live="polite">
             {activeTab === "home" && (
               <>
-                {loadingPosts && <p className="profile-status">Loading stories…</p>}
-                {postsError && !loadingPosts && (
-                  <p className="profile-status profile-status--muted">{postsError}</p>
+                {postsFeed.loading && postsFeed.items.length === 0 && (
+                  <p className="profile-status">Loading stories…</p>
                 )}
-                {!loadingPosts && !postsError && posts.length === 0 && (
+                {postsFeed.error && postsFeed.items.length === 0 && (
+                  <div className="profile-feed__inline-error">
+                    <p className="profile-status profile-status--muted">{postsFeed.error}</p>
+                    {resolvedPermissions?.canViewPosts && (
+                      <button
+                        type="button"
+                        className="profile-button ghost"
+                        onClick={handleRetryPosts}
+                        disabled={postsFeed.loading}
+                      >
+                        Try again
+                      </button>
+                    )}
+                  </div>
+                )}
+                {!postsFeed.loading && !postsFeed.error && postsFeed.items.length === 0 && (
                   <p className="profile-status profile-status--muted">
                     {viewingOwnProfile
                       ? "Publish your first story to see it here."
                       : "No public stories yet."}
                   </p>
                 )}
-                {posts.map((post) => (
+                {postsFeed.items.map((post) => (
                   <Post
-                    key={post.id || post.slug}
+                    key={post.id || post._id || post.slug}
                     post={post}
                     variant="profile"
                     canEdit={viewingOwnProfile}
@@ -1358,6 +1753,92 @@ const Profile = () => {
                     onDeletePost={viewingOwnProfile ? handleDeleteOwnPost : undefined}
                   />
                 ))}
+                {postsFeed.items.length > 0 && (
+                  <>
+                    {postsFeed.error && (
+                      <div className="profile-feed__inline-error">
+                        <p className="profile-status profile-status--muted">{postsFeed.error}</p>
+                        <button
+                          type="button"
+                          className="profile-button ghost"
+                          onClick={handleRetryPosts}
+                          disabled={postsFeed.loading}
+                        >
+                          Try again
+                        </button>
+                      </div>
+                    )}
+                    {postsFeed.loading && (
+                      <p className="profile-status profile-status--muted">Loading more stories…</p>
+                    )}
+                    {!postsFeed.loading && !postsFeed.hasMore && (
+                      <p className="profile-status profile-status--muted">You're all caught up.</p>
+                    )}
+                  </>
+                )}
+                {resolvedPermissions?.canViewPosts && (
+                  <div ref={postsObserverRef} className="profile-feed__sentinel" aria-hidden="true" />
+                )}
+              </>
+            )}
+
+            {activeTab === "drafts" && viewingOwnProfile && (
+              <>
+                {draftFeed.loading && draftFeed.items.length === 0 && (
+                  <p className="profile-status">Loading drafts…</p>
+                )}
+                {draftFeed.error && draftFeed.items.length === 0 && (
+                  <div className="profile-feed__inline-error">
+                    <p className="profile-status profile-status--muted">{draftFeed.error}</p>
+                    <button
+                      type="button"
+                      className="profile-button ghost"
+                      onClick={handleRetryDrafts}
+                      disabled={draftFeed.loading}
+                    >
+                      Try again
+                    </button>
+                  </div>
+                )}
+                {!draftFeed.loading && !draftFeed.error && draftFeed.items.length === 0 && (
+                  <p className="profile-status profile-status--muted">
+                    Capture your ideas here. Drafts you save will appear in this tab.
+                  </p>
+                )}
+                {draftFeed.items.map((draft) => (
+                  <Post
+                    key={draft.id || draft._id || draft.slug}
+                    post={draft}
+                    variant="profile"
+                    canEdit
+                    onActionFeedback={handleCardFeedback}
+                    onDeletePost={handleDeleteOwnPost}
+                  />
+                ))}
+                {draftFeed.items.length > 0 && (
+                  <>
+                    {draftFeed.error && (
+                      <div className="profile-feed__inline-error">
+                        <p className="profile-status profile-status--muted">{draftFeed.error}</p>
+                        <button
+                          type="button"
+                          className="profile-button ghost"
+                          onClick={handleRetryDrafts}
+                          disabled={draftFeed.loading}
+                        >
+                          Try again
+                        </button>
+                      </div>
+                    )}
+                    {draftFeed.loading && (
+                      <p className="profile-status profile-status--muted">Loading more drafts…</p>
+                    )}
+                    {!draftFeed.loading && !draftFeed.hasMore && (
+                      <p className="profile-status profile-status--muted">No more drafts.</p>
+                    )}
+                  </>
+                )}
+                <div ref={draftsObserverRef} className="profile-feed__sentinel" aria-hidden="true" />
               </>
             )}
 

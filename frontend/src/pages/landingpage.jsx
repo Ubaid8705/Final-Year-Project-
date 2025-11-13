@@ -64,9 +64,12 @@ const LandingPage = () => {
     navigate(location.pathname, { replace: true, state: {} });
   }, [location, navigate]);
 
-  const handleNotificationsClick = () => {
-    setActiveView("notifications");
-  };
+  // const handleNotificationsClick = () => {
+  //   setActiveView("notifications");
+  // };
+  const handleStartWriting = () => {
+    navigate("/create-post");
+  }
 
   const isNotificationsView = activeView === "notifications";
 
@@ -94,7 +97,7 @@ const LandingPage = () => {
                 );
               })}
             </div>
-            <button
+            {/* <button
               type="button"
               className={`feed-toggle-btn feed-toggle-btn--notifications${isNotificationsView ? " feed-toggle-btn--active" : ""}`}
               onClick={handleNotificationsClick}
@@ -106,7 +109,7 @@ const LandingPage = () => {
                   {unreadCount > 9 ? "9+" : unreadCount}
                 </span>
               )}
-            </button>
+            </button> */}
           </div>
         )}
 
@@ -159,7 +162,7 @@ const LandingPage = () => {
               <li>Expert writing advice</li>
               <li>Grow your readership</li>
             </ul>
-            <button className="info-action">Start writing</button>
+            <button className="info-action" onClick={handleStartWriting}>Start writing</button>
           </div>
         )}
         <Recomendations />
