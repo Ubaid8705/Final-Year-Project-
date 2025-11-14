@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Post from "./post";
 import { API_BASE_URL } from "../config";
 import { useAuth } from "../contexts/AuthContext";
@@ -79,6 +79,31 @@ const getPostDeletionTarget = (item) => {
   return "";
 };
 
+const getAuthorIdentifier = (author) => {
+  if (!author) {
+    return "";
+  }
+
+  const candidates = [author.id, author._id, author.username, author.email];
+
+  for (const value of candidates) {
+    if (!value) {
+      continue;
+    }
+    if (typeof value === "string" && value.trim()) {
+      return value.trim().toLowerCase();
+    }
+    if (typeof value === "object" && typeof value.toString === "function") {
+      const stringValue = value.toString();
+      if (stringValue && stringValue !== "[object Object]") {
+        return stringValue.toLowerCase();
+      }
+    }
+  }
+
+  return "";
+};
+
 const resolveScope = (selection) => {
   if (selection === "featured") {
     return "featured";
@@ -100,6 +125,33 @@ const PostsFeed = ({ selection = "forYou" }) => {
   const loadingRef = useRef(false);
   const observer = useRef(null);
   const scope = resolveScope(selection);
+  const featuredGroups = useMemo(() => {
+    if (scope !== "featured") {
+      return [];
+    }
+
+    const groups = new Map();
+
+    posts.forEach((post, index) => {
+      const author = post?.author || {};
+      const baseKey = getAuthorIdentifier(author) || `${getPostIdentifier(post) || "unknown"}-${index}`;
+
+      if (!groups.has(baseKey)) {
+        groups.set(baseKey, {
+          key: baseKey,
+          author,
+          posts: [],
+        });
+      }
+
+      const bucket = groups.get(baseKey);
+      if (bucket.posts.length < 2) {
+        bucket.posts.push(post);
+      }
+    });
+
+    return Array.from(groups.values());
+  }, [scope, posts]);
   const handleActionFeedback = useCallback((message, type = "info") => {
     if (!message) {
       setFeedback(null);
@@ -481,6 +533,9 @@ const PostsFeed = ({ selection = "forYou" }) => {
 
   const showEndMessage = initialized && !loading && !hasMore && posts.length > 0;
   const showEmptyState = initialized && !loading && posts.length === 0;
+  const emptyMessage = scope === "featured"
+    ? "Follow writers to see their latest stories here."
+    : "There are no stories to display yet. Check back soon!";
 
   return (
     <div className="posts-feed">
@@ -505,25 +560,76 @@ const PostsFeed = ({ selection = "forYou" }) => {
         </p>
       )}
 
-      {posts.map((post, index) => {
-        const key = getPostIdentifier(post) || `post-${index}`;
-        const postId = getPostApiId(post);
-        const saved = postId ? savedPostIds.has(postId) : false;
+      {scope === "featured"
+        ? featuredGroups.map((group, groupIndex) => {
+            const author = group.author || {};
+            const displayName = author.name || author.username || "BlogsHive writer";
+            const usernameLabel = author.username ? `@${author.username}` : null;
+            const avatarUrl = author.avatar || "https://api.dicebear.com/7.x/initials/svg?seed=writer";
 
-        return (
-          <Post
-            key={key}
-            post={post}
-            variant={selection === "featured" ? "featured" : "default"}
-            isSaved={saved}
-            onToggleSave={handleToggleSave}
-            onShowLess={handleHidePost}
-            onActionFeedback={handleActionFeedback}
-            onDeletePost={handleDeletePost}
-            canEdit
-          />
-        );
-      })}
+            return (
+              <section
+                key={group.key || `featured-group-${groupIndex}`}
+                className="posts-feed__featured-group"
+              >
+                <header className="posts-feed__featured-header">
+                  <img
+                    src={avatarUrl}
+                    alt={displayName}
+                    className="posts-feed__featured-avatar"
+                  />
+                  <div className="posts-feed__featured-meta">
+                    <span className="posts-feed__featured-name">{displayName}</span>
+                    {usernameLabel && (
+                      <span className="posts-feed__featured-username">{usernameLabel}</span>
+                    )}
+                    <span className="posts-feed__featured-subtitle">Recent stories from this writer</span>
+                  </div>
+                </header>
+                <div className="posts-feed__featured-posts">
+                  {group.posts.map((post, postIndex) => {
+                    const key =
+                      getPostIdentifier(post) || `${group.key || groupIndex}-post-${postIndex}`;
+                    const postId = getPostApiId(post);
+                    const saved = postId ? savedPostIds.has(postId) : false;
+
+                    return (
+                      <Post
+                        key={key}
+                        post={post}
+                        variant="featured"
+                        isSaved={saved}
+                        onToggleSave={handleToggleSave}
+                        onShowLess={handleHidePost}
+                        onActionFeedback={handleActionFeedback}
+                        onDeletePost={handleDeletePost}
+                        canEdit
+                      />
+                    );
+                  })}
+                </div>
+              </section>
+            );
+          })
+        : posts.map((post, index) => {
+            const key = getPostIdentifier(post) || `post-${index}`;
+            const postId = getPostApiId(post);
+            const saved = postId ? savedPostIds.has(postId) : false;
+
+            return (
+              <Post
+                key={key}
+                post={post}
+                variant="default"
+                isSaved={saved}
+                onToggleSave={handleToggleSave}
+                onShowLess={handleHidePost}
+                onActionFeedback={handleActionFeedback}
+                onDeletePost={handleDeletePost}
+                canEdit
+              />
+            );
+          })}
 
       {loading && (
         <p className="posts-status" aria-live="polite">
@@ -533,7 +639,7 @@ const PostsFeed = ({ selection = "forYou" }) => {
 
       {showEmptyState && (
         <p className="posts-status" role="note">
-          There are no stories to display yet. Check back soon!
+          {emptyMessage}
         </p>
       )}
 

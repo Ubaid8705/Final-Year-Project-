@@ -42,7 +42,11 @@ const resolveUser = async (identifier) => {
     }
   }
 
-  return User.findOne({ username: identifier }).select(USER_PROJECTION);
+  // Case-insensitive username lookup
+  const normalizedUsername = decodeURIComponent(identifier).trim();
+  return User.findOne({ 
+    username: { $regex: new RegExp(`^${normalizedUsername.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') }
+  }).select(USER_PROJECTION);
 };
 
 const parsePagination = (query) => {

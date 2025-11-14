@@ -419,7 +419,13 @@ export const deleteUser = async (req, res) => {
 // Get user by username (public profile)
 export const getUserByUsername = async (req, res) => {
   try {
-    const user = await User.findOne({ username: req.params.username }).select(
+    // Decode and normalize the username parameter
+    const normalizedUsername = decodeURIComponent(req.params.username).trim();
+    
+    // Case-insensitive username lookup
+    const user = await User.findOne({ 
+      username: { $regex: new RegExp(`^${normalizedUsername.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') }
+    }).select(
       PUBLIC_USER_PROJECTION
     );
 

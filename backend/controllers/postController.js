@@ -724,17 +724,91 @@ export const listPosts = async (req, res) => {
       if (uniqueIds.length === 0) {
         return res.json({
           items: [],
+          posts: [],
           pagination: {
             total: 0,
             page: Number(page) || 1,
             limit: numericLimit,
+            hasMore: false,
           },
         });
       }
 
-      filter.author = {
-        $in: uniqueIds.map((id) => new mongoose.Types.ObjectId(id)),
+      const authorObjectIds = uniqueIds
+        .map((value) => {
+          try {
+            return new mongoose.Types.ObjectId(value);
+          } catch (error) {
+            return null;
+          }
+        })
+        .filter(Boolean);
+
+      if (authorObjectIds.length === 0) {
+        return res.json({
+          items: [],
+          posts: [],
+          pagination: {
+            total: 0,
+            page: Number(page) || 1,
+            limit: numericLimit,
+            hasMore: false,
+          },
+        });
+      }
+
+      const matchStage = {
+        author: { $in: authorObjectIds },
+        isPublished: true,
+        visibility: { $ne: "PRIVATE" },
       };
+
+      if (hiddenPostIds.length > 0) {
+        matchStage._id = { $nin: hiddenPostIds };
+      }
+
+      const pipeline = [
+        { $match: matchStage },
+        { $sort: { publishedAt: -1, createdAt: -1, _id: -1 } },
+        {
+          $group: {
+            _id: "$author",
+            posts: { $push: "$$ROOT" },
+          },
+        },
+        {
+          $project: {
+            posts: { $slice: ["$posts", 2] },
+          },
+        },
+        { $unwind: "$posts" },
+        { $replaceRoot: { newRoot: "$posts" } },
+        { $sort: { publishedAt: -1, createdAt: -1, _id: -1 } },
+      ];
+
+      const aggregatedPosts = await Post.aggregate(pipeline);
+      const populatedPosts = await Post.populate(aggregatedPosts, {
+        path: "author",
+        select: "username name avatar bio membershipStatus",
+      });
+
+      const hydratedFeatured = populatedPosts.map(hydratePost);
+      const pageNumber = Math.max(Number(page) || 1, 1);
+      const effectiveLimit = Math.max(numericLimit, 1);
+      const startIndex = (pageNumber - 1) * effectiveLimit;
+      const pageItems = hydratedFeatured.slice(startIndex, startIndex + effectiveLimit);
+      const hasMoreFeatured = startIndex + pageItems.length < hydratedFeatured.length;
+
+      return res.json({
+        items: pageItems,
+        posts: pageItems,
+        pagination: {
+          total: hydratedFeatured.length,
+          page: pageNumber,
+          limit: effectiveLimit,
+          hasMore: hasMoreFeatured,
+        },
+      });
     }
 
     const authorMatchesViewer =
@@ -1241,7 +1315,14 @@ export const reportPost = async (req, res) => {
 export const listAuthorPosts = async (req, res) => {
   try {
     const { username } = req.params;
-    const author = await User.findOne({ username }).select(
+    
+    // Decode and normalize the username parameter
+    const normalizedUsername = decodeURIComponent(username).trim();
+    
+    // Case-insensitive username lookup
+    const author = await User.findOne({ 
+      username: { $regex: new RegExp(`^${normalizedUsername.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') }
+    }).select(
       "_id username name avatar bio membershipStatus"
     );
 
