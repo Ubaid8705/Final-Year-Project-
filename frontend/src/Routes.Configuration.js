@@ -7,6 +7,7 @@ import PostView from "./pages/postview";
 import Write from "./pages/write";
 import LandingPage from "./pages/landingpage";
 import Profile from "./pages/profile";
+import ProfileStories from "./pages/profile-stories";
 import { FollowersPage, FollowingPage } from "./pages/connections";
 import OAuthCallback from "./pages/oauth-callback";
 import Notifications from "./pages/notifications";
@@ -72,6 +73,14 @@ export const routes = [
     ),
   },
   {
+    path: "/profile/stories",
+    element: (
+      <ProtectedRoute>
+        <ProfileStories />
+      </ProtectedRoute>
+    ),
+  },
+  {
     path: "/profile/followers",
     element: (
       <ProtectedRoute>
@@ -92,6 +101,14 @@ export const routes = [
     element: (
       <ProtectedRoute>
         <Profile />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: "/u/:username/stories",
+    element: (
+      <ProtectedRoute>
+        <ProfileStories />
       </ProtectedRoute>
     ),
   },

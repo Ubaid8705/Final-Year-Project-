@@ -798,3 +798,44 @@
     height: 120px;
   }
 }
+
+  .profile-preview-section {
+    background: #ffffff;
+    border-radius: 20px;
+    padding: 24px;
+    border: 1px solid rgba(0, 0, 0, 0.04);
+    box-shadow: 0 22px 45px -40px rgba(0, 0, 0, 0.65);
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .profile-preview-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 8px;
+  }
+
+  .profile-preview-header h3 {
+    margin: 0;
+    font-size: 1.15rem;
+    color: #1e1e1e;
+  }
+
+  .profile-preview-link {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #1a8917;
+    text-decoration: none;
+  }
+
+  .profile-preview-link:hover,
+  .profile-preview-link:focus {
+    text-decoration: underline;
+  }
+
+  .profile-preview-section .post-card + .post-card {
+    margin-top: 16px;
+  }

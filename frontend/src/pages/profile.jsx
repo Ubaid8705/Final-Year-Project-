@@ -170,6 +170,9 @@ const arraysEqual = (first = [], second = []) => {
   return first.every((entry, index) => entry === second[index]);
 };
 
+const POSTS_PREVIEW_LIMIT = 5;
+const DRAFTS_PREVIEW_LIMIT = 5;
+
 const Profile = () => {
   const { user: authUser, token, updateUser: updateStoredUser } = useAuth();
   const { username: routeUsername } = useParams();
@@ -182,14 +185,19 @@ const Profile = () => {
   const [stats, setStats] = useState({ followers: 0, following: 0 });
   const [relationship, setRelationship] = useState(null);
   const [permissions, setPermissions] = useState(viewingOwnProfile ? OWN_PERMISSIONS : null);
-  const [posts, setPosts] = useState([]);
+  const [postPreview, setPostPreview] = useState([]);
+  const [postPreviewMeta, setPostPreviewMeta] = useState({ total: 0, hasMore: false });
+  const [draftPreview, setDraftPreview] = useState([]);
+  const [draftPreviewMeta, setDraftPreviewMeta] = useState({ total: 0, hasMore: false });
   const [savedPosts, setSavedPosts] = useState([]);
   const [savedFetched, setSavedFetched] = useState(false);
   const [loadingProfile, setLoadingProfile] = useState(true);
-  const [loadingPosts, setLoadingPosts] = useState(false);
+  const [loadingPostPreview, setLoadingPostPreview] = useState(false);
+  const [loadingDraftPreview, setLoadingDraftPreview] = useState(false);
   const [loadingLists, setLoadingLists] = useState(false);
   const [profileError, setProfileError] = useState(null);
   const [postsError, setPostsError] = useState(null);
+  const [draftsError, setDraftsError] = useState(null);
   const [listsError, setListsError] = useState(null);
   const [actionLoading, setActionLoading] = useState(null);
   const [feedback, setFeedback] = useState(null);
@@ -241,6 +249,104 @@ const Profile = () => {
     return "";
   }, []);
 
+  const fetchPostPreview = useCallback(async () => {
+    if (!profileUsername) {
+      return;
+    }
+
+    setLoadingPostPreview(true);
+    setPostsError(null);
+
+    const params = new URLSearchParams();
+    params.set("limit", POSTS_PREVIEW_LIMIT.toString());
+    params.set("page", "1");
+
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/api/posts/author/${encodeURIComponent(profileUsername)}?${params.toString()}`,
+        {
+          headers: token
+            ? {
+                Authorization: `Bearer ${token}`,
+              }
+            : undefined,
+        }
+      );
+
+      const payload = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(payload.error || "Failed to load stories");
+      }
+
+      const items = Array.isArray(payload.items)
+        ? payload.items
+        : Array.isArray(payload.posts)
+        ? payload.posts
+        : [];
+
+      const pagination = payload.pagination || {};
+      const totalCandidate = Number(pagination.total);
+      const total = Number.isFinite(totalCandidate) ? totalCandidate : items.length;
+      const hasMore =
+        typeof pagination.hasMore === "boolean"
+          ? pagination.hasMore
+          : total > POSTS_PREVIEW_LIMIT;
+
+      setPostPreview(items.slice(0, POSTS_PREVIEW_LIMIT));
+      setPostPreviewMeta({ total, hasMore });
+    } catch (error) {
+      setPostPreview([]);
+      setPostPreviewMeta({ total: 0, hasMore: false });
+      setPostsError(error.message || "Failed to load stories");
+    } finally {
+      setLoadingPostPreview(false);
+    }
+  }, [profileUsername, token]);
+
+  const fetchDraftPreview = useCallback(async () => {
+    if (!viewingOwnProfile || !token) {
+      return;
+    }
+
+    setLoadingDraftPreview(true);
+    setDraftsError(null);
+
+    const params = new URLSearchParams();
+    params.set("limit", DRAFTS_PREVIEW_LIMIT.toString());
+    params.set("page", "1");
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/posts/drafts?${params.toString()}`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const payload = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(payload.error || "Failed to load drafts");
+      }
+
+      const items = Array.isArray(payload.items) ? payload.items : [];
+      const pagination = payload.pagination || {};
+      const totalCandidate = Number(pagination.total);
+      const total = Number.isFinite(totalCandidate) ? totalCandidate : items.length;
+      const hasMore =
+        typeof pagination.hasMore === "boolean" ? pagination.hasMore : total > DRAFTS_PREVIEW_LIMIT;
+
+      setDraftPreview(items.slice(0, DRAFTS_PREVIEW_LIMIT));
+      setDraftPreviewMeta({ total, hasMore });
+    } catch (error) {
+      setDraftPreview([]);
+      setDraftPreviewMeta({ total: 0, hasMore: false });
+      setDraftsError(error.message || "Failed to load drafts");
+    } finally {
+      setLoadingDraftPreview(false);
+    }
+  }, [token, viewingOwnProfile]);
+
   const handleDeleteOwnPost = useCallback(
     async (post) => {
       const target = resolvePostDeletionTarget(post);
@@ -271,8 +377,12 @@ const Profile = () => {
           throw new Error(payload?.error || "Unable to delete story.");
         }
 
-        setPosts((current) => current.filter((item) => resolvePostDeletionTarget(item) !== target));
         handleCardFeedback("Story deleted.", "success");
+
+        fetchPostPreview();
+        if (viewingOwnProfile) {
+          fetchDraftPreview();
+        }
 
         return { success: true };
       } catch (requestError) {
@@ -282,7 +392,7 @@ const Profile = () => {
         return { success: false, error: message };
       }
     },
-    [handleCardFeedback, resolvePostDeletionTarget, token]
+    [fetchDraftPreview, fetchPostPreview, handleCardFeedback, resolvePostDeletionTarget, token, viewingOwnProfile]
   );
 
   const initializeEditForm = useCallback(() => {
@@ -524,8 +634,12 @@ const Profile = () => {
   }, [viewingOwnProfile]);
 
   useEffect(() => {
-    setPosts([]);
+    setPostPreview([]);
+    setPostPreviewMeta({ total: 0, hasMore: false });
+    setDraftPreview([]);
+    setDraftPreviewMeta({ total: 0, hasMore: false });
     setPostsError(null);
+    setDraftsError(null);
     setSavedPosts([]);
     setSavedFetched(false);
     setListsError(null);
@@ -739,49 +853,30 @@ const Profile = () => {
     return permissions || normalizePermissions(null);
   }, [permissions, normalizePermissions, viewingOwnProfile]);
 
-  const fetchPosts = useCallback(async () => {
-    if (!token || !profileUsername) {
-      return;
-    }
-
-    setLoadingPosts(true);
-    setPostsError(null);
-
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/posts/author/${profileUsername}`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-
-      const payload = await response.json().catch(() => ({}));
-
-      if (!response.ok) {
-        throw new Error(payload.error || "Failed to load stories");
-      }
-
-      setPosts(Array.isArray(payload.posts) ? payload.posts : []);
-    } catch (error) {
-      setPosts([]);
-      setPostsError(error.message || "Failed to load stories");
-    } finally {
-      setLoadingPosts(false);
-    }
-  }, [token, profileUsername]);
-
   useEffect(() => {
     if (loadingProfile) {
       return;
     }
+
     if (!resolvedPermissions?.canViewPosts) {
       const key = resolvedPermissions?.reason;
-      setPosts([]);
+      setPostPreview([]);
+      setPostPreviewMeta({ total: 0, hasMore: false });
       setPostsError(key ? permissionMessages[key] || "Stories are hidden." : "Stories are hidden.");
-      setLoadingPosts(false);
+      setLoadingPostPreview(false);
       return;
     }
-    fetchPosts();
-  }, [resolvedPermissions, fetchPosts, loadingProfile]);
+
+    fetchPostPreview();
+  }, [resolvedPermissions, fetchPostPreview, loadingProfile]);
+
+  useEffect(() => {
+    if (!viewingOwnProfile || loadingProfile) {
+      return;
+    }
+
+    fetchDraftPreview();
+  }, [fetchDraftPreview, loadingProfile, viewingOwnProfile]);
 
   const fetchSavedPosts = useCallback(async () => {
     if (!token) {
@@ -1034,7 +1129,7 @@ const Profile = () => {
           canViewPosts: true,
           reason: null,
         }));
-        fetchPosts();
+        fetchPostPreview();
       }
 
       setFeedback({
@@ -1046,7 +1141,7 @@ const Profile = () => {
     } finally {
       setActionLoading(null);
     }
-  }, [viewingOwnProfile, profileUsername, relationship, token, resolvedPermissions, fetchPosts]);
+  }, [viewingOwnProfile, profileUsername, relationship, token, resolvedPermissions, fetchPostPreview]);
 
   const handleBlockToggle = useCallback(async () => {
     if (viewingOwnProfile || !profileUsername) {
@@ -1086,7 +1181,8 @@ const Profile = () => {
           canViewLists: false,
           reason: "self-blocked",
         });
-        setPosts([]);
+        setPostPreview([]);
+        setPostPreviewMeta({ total: 0, hasMore: false });
         setPostsError(permissionMessages["self-blocked"]);
       } else {
         fetchProfile();
@@ -1145,6 +1241,7 @@ const Profile = () => {
   const followingCount = stats?.following ?? 0;
   const profileSlug = profile?.username || profileUsername || authUser?.username || "";
   const canNavigateToConnections = viewingOwnProfile || Boolean(profileSlug);
+  const storiesUsername = viewingOwnProfile ? null : profileSlug || profileUsername;
   const followersLink = viewingOwnProfile
     ? "/profile/followers"
     : profileSlug
@@ -1155,6 +1252,14 @@ const Profile = () => {
     : profileSlug
     ? `/u/${profileSlug}/following`
     : "#";
+  const postsPageLink = viewingOwnProfile
+    ? "/profile/stories"
+    : storiesUsername
+    ? `/u/${storiesUsername}/stories`
+    : null;
+  const draftsPageLink = viewingOwnProfile
+    ? { pathname: "/profile/stories", search: "?tab=drafts" }
+    : null;
 
   const tabs = useMemo(() => {
     const base = [{ id: "home", label: viewingOwnProfile ? "Home" : "Stories" }];
@@ -1337,27 +1442,69 @@ const Profile = () => {
           <section className="profile-feed" aria-live="polite">
             {activeTab === "home" && (
               <>
-                {loadingPosts && <p className="profile-status">Loading stories…</p>}
-                {postsError && !loadingPosts && (
-                  <p className="profile-status profile-status--muted">{postsError}</p>
+                <div className="profile-preview-section">
+                  <div className="profile-preview-header">
+                    <h3>Stories</h3>
+                    {postsPageLink && (postPreview.length > 0 || postPreviewMeta.total > 0) && (
+                      <Link to={postsPageLink} className="profile-preview-link">
+                        See all
+                      </Link>
+                    )}
+                  </div>
+                  {loadingPostPreview && <p className="profile-status">Loading stories…</p>}
+                  {postsError && !loadingPostPreview && (
+                    <p className="profile-status profile-status--muted">{postsError}</p>
+                  )}
+                  {!loadingPostPreview && !postsError && postPreview.length === 0 && (
+                    <p className="profile-status profile-status--muted">
+                      {viewingOwnProfile
+                        ? "Publish your first story to see it here."
+                        : "No public stories yet."}
+                    </p>
+                  )}
+                  {postPreview.map((post) => (
+                    <Post
+                      key={post.id || post.slug || post._id || post.metadata?.id}
+                      post={post}
+                      variant="profile"
+                      canEdit={viewingOwnProfile}
+                      onActionFeedback={handleCardFeedback}
+                      onDeletePost={viewingOwnProfile ? handleDeleteOwnPost : undefined}
+                    />
+                  ))}
+                </div>
+
+                {viewingOwnProfile && (
+                  <div className="profile-preview-section">
+                    <div className="profile-preview-header">
+                      <h3>Drafts</h3>
+                      {draftsPageLink && (draftPreview.length > 0 || draftPreviewMeta.total > 0) && (
+                        <Link to={draftsPageLink} className="profile-preview-link">
+                          See all
+                        </Link>
+                      )}
+                    </div>
+                    {loadingDraftPreview && <p className="profile-status">Loading drafts…</p>}
+                    {draftsError && !loadingDraftPreview && (
+                      <p className="profile-status profile-status--muted">{draftsError}</p>
+                    )}
+                    {!loadingDraftPreview && !draftsError && draftPreview.length === 0 && (
+                      <p className="profile-status profile-status--muted">
+                        Save ideas as drafts to keep them handy.
+                      </p>
+                    )}
+                    {draftPreview.map((post) => (
+                      <Post
+                        key={post.id || post.slug || post._id || post.metadata?.id}
+                        post={post}
+                        variant="profile"
+                        canEdit
+                        onActionFeedback={handleCardFeedback}
+                        onDeletePost={handleDeleteOwnPost}
+                      />
+                    ))}
+                  </div>
                 )}
-                {!loadingPosts && !postsError && posts.length === 0 && (
-                  <p className="profile-status profile-status--muted">
-                    {viewingOwnProfile
-                      ? "Publish your first story to see it here."
-                      : "No public stories yet."}
-                  </p>
-                )}
-                {posts.map((post) => (
-                  <Post
-                    key={post.id || post.slug}
-                    post={post}
-                    variant="profile"
-                    canEdit={viewingOwnProfile}
-                    onActionFeedback={handleCardFeedback}
-                    onDeletePost={viewingOwnProfile ? handleDeleteOwnPost : undefined}
-                  />
-                ))}
               </>
             )}
 
