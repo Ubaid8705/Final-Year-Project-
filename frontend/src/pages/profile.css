@@ -429,12 +429,14 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 32px;
+  padding: clamp(16px, 4vw, 36px);
   z-index: 1100;
 }
 
 .profile-edit-modal__dialog {
-  width: min(640px, 100%);
+  width: min(680px, 100%);
+  max-width: min(680px, 96vw);
+  max-height: min(92vh, 880px);
   background: #ffffff;
   border-radius: 24px;
   box-shadow: 0 40px 80px rgba(12, 18, 30, 0.35);
@@ -480,10 +482,13 @@
 }
 
 .profile-edit-modal__body {
-  padding: 24px 32px 0;
+  padding: 24px 32px 24px;
   display: flex;
   flex-direction: column;
   gap: 24px;
+  flex: 1 1 auto;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
 }
 
 .profile-edit-modal__error {
@@ -497,7 +502,7 @@
 
 .profile-edit-modal__grid {
   display: grid;
-  grid-template-columns: 180px 1fr;
+  grid-template-columns: minmax(0, 200px) minmax(0, 1fr);
   gap: 24px;
   align-items: flex-start;
 }
@@ -698,6 +703,7 @@
   gap: 12px;
   padding: 20px 32px 28px;
   border-top: 1px solid rgba(15, 23, 42, 0.08);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.92), #ffffff);
 }
 
 .profile-edit-modal__button {
@@ -811,11 +817,12 @@
   }
 
   .profile-edit-modal {
-    padding: 16px;
+    padding: clamp(12px, 3vw, 20px);
   }
 
   .profile-edit-modal__dialog {
     border-radius: 18px;
+    max-height: min(92vh, 820px);
   }
 
   .profile-edit-modal__header,
@@ -871,6 +878,47 @@
 
   .profile-header-card__actions {
     flex-wrap: wrap;
+  }
+
+  .profile-edit-modal__dialog {
+    max-height: min(90vh, 760px);
+  }
+
+  .profile-edit-modal__avatar {
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .profile-edit-modal__avatar img {
+    width: 104px;
+    height: 104px;
+  }
+
+  .profile-edit-modal__actions {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    padding-bottom: 24px;
+  }
+
+  .profile-edit-modal__button {
+    width: 100%;
+  }
+}
+
+@media (max-height: 720px) {
+  .profile-edit-modal__dialog {
+    max-height: calc(100vh - 32px);
+  }
+
+  .profile-edit-modal__body {
+    padding-top: 20px;
+    padding-bottom: 16px;
+  }
+
+  .profile-edit-modal__avatar img {
+    width: 128px;
+    height: 128px;
   }
 }
 
