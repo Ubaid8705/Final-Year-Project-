@@ -1,6 +1,7 @@
 .profile-page {
   position: relative;
   min-height: 100vh;
+  padding-top: clamp(84px, 12vw, 112px);
   padding-bottom: 80px;
   background: linear-gradient(180deg, rgba(26, 137, 23, 0.08) 0%, rgba(255, 255, 255, 0) 45%);
 }
@@ -32,12 +33,14 @@
 
 .profile-hero__controls {
   position: absolute;
-  right: clamp(12px, 4vw, 36px);
-  bottom: clamp(12px, 4vw, 36px);
+  top: clamp(12px, 4vw, 36px);
+  left: clamp(12px, 4vw, 36px);
   display: flex;
+  flex-wrap: wrap;
   gap: 12px;
   align-items: center;
-  z-index: 2;
+  justify-content: flex-start;
+  z-index: 3;
 }
 
 .profile-hero__button {
@@ -729,6 +732,27 @@
   box-shadow: 0 24px 42px -16px rgba(26, 137, 23, 0.6);
 }
 
+@media (max-width: 900px) {
+  .profile-shell {
+    margin-top: -96px;
+    grid-template-columns: 1fr;
+    padding: 0 20px;
+  }
+
+  .profile-aside {
+    position: static;
+    max-width: 600px;
+    width: 100%;
+    margin: 0 auto;
+  }
+
+  .profile-hero__controls {
+    top: 18px;
+    left: 18px;
+    gap: 10px;
+  }
+}
+
 @media (max-width: 1040px) {
   .profile-shell {
     grid-template-columns: 1fr;
@@ -740,6 +764,10 @@
 }
 
 @media (max-width: 640px) {
+  .profile-page {
+    padding-top: clamp(72px, 10vw, 94px);
+  }
+
   .profile-shell {
     margin-top: -100px;
     padding: 0 16px;
@@ -748,6 +776,17 @@
   .profile-header-card {
     border-radius: 20px;
     padding: 24px;
+  }
+
+  .profile-hero__controls {
+    top: 14px;
+    left: 14px;
+    gap: 8px;
+  }
+
+  .profile-hero__button {
+    padding: 9px 18px;
+    font-size: 0.85rem;
   }
 
   .profile-header-card__actions {
@@ -796,6 +835,39 @@
   .profile-edit-modal__avatar img {
     width: 120px;
     height: 120px;
+  }
+}
+
+@media (max-width: 480px) {
+  .profile-page {
+    padding-top: clamp(68px, 24vw, 88px);
+  }
+
+  .profile-hero {
+    height: clamp(200px, 48vw, 260px);
+  }
+
+  .profile-shell {
+    margin-top: -72px;
+  }
+
+  .profile-hero__controls {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .profile-hero__button {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .profile-header-card__grid {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .profile-header-card__actions {
+    flex-wrap: wrap;
   }
 }
 
