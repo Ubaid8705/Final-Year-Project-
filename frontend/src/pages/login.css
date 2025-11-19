@@ -64,9 +64,15 @@ h1 {
   border-color: rgb(168, 168, 168);
 }
 
-.social-btn img {
+.social-btn__icon {
   width: 20px;
   height: 20px;
+  flex-shrink: 0;
+}
+
+.social-btn span {
+  display: inline-flex;
+  align-items: center;
 }
 
 form {

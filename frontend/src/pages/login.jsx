@@ -4,6 +4,51 @@ import { useAuth } from "../contexts/AuthContext";
 import { API_BASE_URL } from "../config";
 import './login.css';
 
+const GoogleIcon = ({ className }) => (
+  <svg
+    className={className}
+    viewBox="0 0 18 18"
+    xmlns="http://www.w3.org/2000/svg"
+    role="img"
+    aria-hidden="true"
+    focusable="false"
+  >
+    <path
+      d="M17.64 9.204c0-.639-.057-1.251-.164-1.836H9v3.472h4.844a4.143 4.143 0 01-1.798 2.718l2.728 2.118c1.596-1.47 2.496-3.638 2.496-6.472z"
+      fill="#4285F4"
+    />
+    <path
+      d="M9 18c2.43 0 4.468-.806 5.956-2.184l-2.906-2.258c-.807.54-1.84.857-3.05.857-2.343 0-4.327-1.584-5.036-3.71H.957v2.332A9 9 0 009 18z"
+      fill="#34A853"
+    />
+    <path
+      d="M3.964 10.705a5.413 5.413 0 010-3.407V4.965H.957A9 9 0 000 9c0 1.431.343 2.784.957 4.036l3.007-2.331z"
+      fill="#FBBC05"
+    />
+    <path
+      d="M9 3.579c1.321 0 2.507.454 3.44 1.346l2.583-2.583C13.463.9 11.43 0 9 0A9 9 0 00.957 4.965l3.007 2.333C4.673 5.163 6.657 3.579 9 3.579z"
+      fill="#EA4335"
+    />
+  </svg>
+);
+
+const FacebookIcon = ({ className }) => (
+  <svg
+    className={className}
+    viewBox="0 0 18 18"
+    xmlns="http://www.w3.org/2000/svg"
+    role="img"
+    aria-hidden="true"
+    focusable="false"
+  >
+    <circle cx="9" cy="9" r="9" fill="#1877F2" />
+    <path
+      d="M10.296 14.25v-4.29h1.443L12 7.875h-1.704V6.75c0-.496.164-.875.875-.875H12V4.312c-.253-.032-.823-.083-1.564-.083-1.84 0-2.965 1.024-2.965 2.88V7.875H6.25V9.96h1.22v4.29h2.826z"
+      fill="#FFF"
+    />
+  </svg>
+);
+
 const INITIAL_FORM = {
   name: "",
   username: "",
@@ -302,10 +347,12 @@ const Login = () => {
       <h1>Welcome back.</h1>
       <div className="auth-buttons">
         <button className="social-btn google" onClick={() => redirectToOAuth("google")}>
-          <img src="/google-icon.png" alt="" /> Sign in with Google
+          <GoogleIcon className="social-btn__icon" />
+          <span>Sign in with Google</span>
         </button>
         <button className="social-btn facebook" onClick={() => redirectToOAuth("facebook")}>
-          <img src="/facebook-icon.png" alt="" /> Sign in with Facebook
+          <FacebookIcon className="social-btn__icon" />
+          <span>Sign in with Facebook</span>
         </button>
         <button
           className="email-btn"
@@ -331,10 +378,12 @@ const Login = () => {
       <h1>Join Medium.</h1>
       <div className="auth-buttons">
         <button className="social-btn google" onClick={() => redirectToOAuth("google")}>
-          <img src="/google-icon.png" alt="" /> Sign up with Google
+          <GoogleIcon className="social-btn__icon" />
+          <span>Sign up with Google</span>
         </button>
         <button className="social-btn facebook" onClick={() => redirectToOAuth("facebook")}>
-          <img src="/facebook-icon.png" alt="" /> Sign up with Facebook
+          <FacebookIcon className="social-btn__icon" />
+          <span>Sign up with Facebook</span>
         </button>
         <button 
           className="email-btn"
