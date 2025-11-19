@@ -22,6 +22,10 @@
   margin-bottom: 18px;
 }
 
+.follow-avatar-link {
+  display: inline-flex;
+}
+
 .follow-avatar {
   width: 38px;
   height: 38px;
@@ -43,12 +47,16 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  text-decoration: none;
 }
 
 .follow-info {
   font-size: 0.95rem;
   color: #757575;
   margin-bottom: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .follow-desc {
@@ -72,5 +80,55 @@
 .follow-btn:hover {
   background: #222;
   color: #fff;
+}
+
+.follow-btn[disabled] {
+  border-color: rgba(34, 34, 34, 0.35);
+  color: rgba(34, 34, 34, 0.45);
+  cursor: default;
+}
+
+.follow-btn--following {
+  background: #222;
+  color: #fff;
+  border-color: #222;
+}
+
+.follow-btn--following[disabled] {
+  color: #fff;
+  opacity: 0.92;
+  border-color: #222;
+}
+
+.follow-btn--loading {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.follow-loading,
+.follow-empty {
+  padding: 16px;
+  border-radius: 12px;
+  background: rgba(26, 137, 23, 0.04);
+  border: 1px solid rgba(26, 137, 23, 0.08);
+  color: #4b4b4b;
+  font-size: 0.95rem;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.follow-retry {
+  align-self: flex-start;
+  background: none;
+  border: none;
+  color: #1a8917;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+}
+
+.follow-retry:hover {
+  text-decoration: underline;
 }
 

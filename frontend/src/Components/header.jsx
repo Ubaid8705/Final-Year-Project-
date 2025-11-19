@@ -61,6 +61,7 @@ function Header() {
   };
 
   const handleWrite = () => {
+    setShowMenu(false);
     navigate(isAuthenticated ? "/write" : "/login");
   };
 
@@ -427,7 +428,15 @@ function Header() {
               >
                 Home
               </span>
-              <span className="profile-footer-link">Blog</span>
+              <span
+                className="profile-footer-link"
+                onClick={handleWrite}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(event) => handleKeyActivate(event, handleWrite)}
+              >
+                Blog
+              </span>
               <span
                 className="profile-footer-link"
                 onClick={handleAbout}

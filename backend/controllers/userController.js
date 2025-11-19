@@ -1,4 +1,5 @@
 import User from "../models/User.js";
+import Post from "../models/Post.js";
 import Relationship from "../models/Relationship.js";
 import UserSettings from "../models/Settings.js";
 import { deleteAssetByPublicId } from "../services/cloudinaryService.js";
@@ -543,21 +544,75 @@ export const getSuggestedUsers = async (req, res) => {
     const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 6, 1), 20);
 
     let viewerFollowing = new Set();
+    let viewerTopics = [];
+    const viewerIdString = viewerId ? viewerId.toString() : null;
 
     if (viewerId) {
-      const followingDocs = await Relationship.find({
-        follower: viewerId,
-        status: RELATIONSHIP_STATUS.FOLLOWING,
-      })
-        .select("following")
-        .lean();
+      const [followingDocs, viewerDoc] = await Promise.all([
+        Relationship.find({
+          follower: viewerId,
+          status: RELATIONSHIP_STATUS.FOLLOWING,
+        })
+          .select("following")
+          .lean(),
+        User.findById(viewerId).select("topics").lean(),
+      ]);
 
       viewerFollowing = new Set(
         followingDocs
           .map((doc) => doc.following?.toString())
           .filter(Boolean)
       );
-      viewerFollowing.add(viewerId.toString());
+      viewerFollowing.add(viewerIdString);
+
+      viewerTopics = Array.isArray(viewerDoc?.topics)
+        ? viewerDoc.topics.filter(Boolean)
+        : [];
+    }
+
+    const normalizedViewerTopics = viewerTopics.map((topic) => topic.toLowerCase());
+    const candidateMap = new Map();
+
+    if (normalizedViewerTopics.length) {
+      const topicCandidates = await User.find({
+        topics: { $in: normalizedViewerTopics },
+      })
+        .select(PUBLIC_USER_PROJECTION)
+        .limit(limit * 8)
+        .lean();
+
+      topicCandidates.forEach((userDoc) => {
+        const id = userDoc?._id?.toString();
+        if (!id) {
+          return;
+        }
+        if (viewerIdString && id === viewerIdString) {
+          return;
+        }
+        if (viewerFollowing.has(id)) {
+          return;
+        }
+
+        const docTopics = Array.isArray(userDoc.topics) ? userDoc.topics : [];
+        const sharedTopics = Array.from(
+          new Set(
+            docTopics
+              .map((topic) => (typeof topic === "string" ? topic.toLowerCase() : topic))
+              .filter((topic) => normalizedViewerTopics.includes(topic))
+          )
+        );
+
+        if (!sharedTopics.length) {
+          return;
+        }
+
+        const score = 300 + sharedTopics.length * 25;
+        candidateMap.set(id, {
+          userDoc,
+          score,
+          sharedTopics,
+        });
+      });
     }
 
     const followerAggregation = await Relationship.aggregate([
@@ -573,58 +628,107 @@ export const getSuggestedUsers = async (req, res) => {
       { $limit: limit * 4 },
     ]);
 
-    const aggregatedIds = followerAggregation
-      .map((entry) => (entry?._id ? entry._id.toString() : null))
-      .filter(Boolean);
+    const fallbackRanking = [];
 
-    const candidateIds = new Set();
-    aggregatedIds.forEach((id) => {
-      if (!viewerFollowing.has(id)) {
-        candidateIds.add(id);
+    followerAggregation.forEach((entry, index) => {
+      const id = entry?._id ? entry._id.toString() : null;
+      if (!id) {
+        return;
+      }
+      if (viewerFollowing.has(id)) {
+        return;
+      }
+      if (viewerIdString && id === viewerIdString) {
+        return;
+      }
+
+      const boost = Math.max(10, 120 - index * 10);
+
+      if (candidateMap.has(id)) {
+        const current = candidateMap.get(id);
+        current.score += boost;
+        candidateMap.set(id, current);
+      } else {
+        fallbackRanking.push({ id, score: 200 + boost });
       }
     });
 
-    if (candidateIds.size < limit * 2) {
-      const fallbackUsers = await User.find({})
+    if (fallbackRanking.length) {
+      const fallbackDocs = await User.find({
+        _id: { $in: fallbackRanking.map((entry) => entry.id) },
+      })
+        .select(PUBLIC_USER_PROJECTION)
+        .lean();
+
+      const fallbackMap = new Map(
+        fallbackDocs.map((doc) => [doc._id?.toString(), doc])
+      );
+
+      fallbackRanking.forEach(({ id, score }) => {
+        if (candidateMap.has(id)) {
+          return;
+        }
+        const userDoc = fallbackMap.get(id);
+        if (!userDoc) {
+          return;
+        }
+        candidateMap.set(id, {
+          userDoc,
+          score,
+          sharedTopics: [],
+        });
+      });
+    }
+
+    if (candidateMap.size < limit) {
+      const fallbackUsers = await User.find({
+        ...(viewerId ? { _id: { $ne: viewerId } } : {}),
+      })
         .sort({ createdAt: -1 })
         .limit(limit * 6)
         .select(PUBLIC_USER_PROJECTION)
         .lean();
 
-      fallbackUsers.forEach((userDoc) => {
+      fallbackUsers.forEach((userDoc, index) => {
         const id = userDoc?._id?.toString();
-        if (!id || viewerFollowing.has(id)) {
+        if (!id) {
           return;
         }
-        candidateIds.add(id);
+        if (viewerFollowing.has(id)) {
+          return;
+        }
+        if (candidateMap.has(id)) {
+          return;
+        }
+        candidateMap.set(id, {
+          userDoc,
+          score: 80 - index,
+          sharedTopics: [],
+        });
       });
     }
 
-    const ids = Array.from(candidateIds).slice(0, limit * 2);
-
-    if (!ids.length) {
+    if (!candidateMap.size) {
       return res.json({ suggestions: [] });
     }
 
-    const users = await User.find({ _id: { $in: ids } })
-      .select(PUBLIC_USER_PROJECTION)
-      .lean();
-
-    const orderedUsers = users.sort((a, b) => {
-      const aIdx = ids.indexOf(a._id.toString());
-      const bIdx = ids.indexOf(b._id.toString());
-      return aIdx - bIdx;
-    });
+    const rankedCandidates = Array.from(candidateMap.values())
+      .sort((a, b) => b.score - a.score)
+      .slice(0, limit);
 
     const payload = await Promise.all(
-      orderedUsers.slice(0, limit).map(async (userDoc) => {
+      rankedCandidates.map(async ({ userDoc, sharedTopics }) => {
         const sanitized = sanitizePublicUser(userDoc);
         const stats = await getFollowStatsForUser(userDoc._id);
+        const normalizedSharedTopics = Array.from(
+          new Set((sharedTopics || []).map((topic) => topic.toString()))
+        ).slice(0, 4);
 
         return {
           user: sanitized,
           stats,
-          isFollowing: viewerFollowing.has(userDoc._id.toString()),
+          isFollowing: viewerFollowing.has(sanitized.id),
+          sharedTopics: normalizedSharedTopics,
         };
       })
     );
@@ -639,7 +743,6 @@ export const getPremiumUsers = async (req, res) => {
   try {
     const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 3, 1), 10);
 
-    // Find all premium users
     const premiumUsers = await User.find({ membershipStatus: true })
       .select(PUBLIC_USER_PROJECTION)
       .lean();
@@ -648,7 +751,6 @@ export const getPremiumUsers = async (req, res) => {
       return res.json({ premiumUsers: [] });
     }
 
-    // Shuffle array for randomness
     const shuffled = premiumUsers.sort(() => Math.random() - 0.5);
     const selected = shuffled.slice(0, limit);
 
@@ -657,9 +759,27 @@ export const getPremiumUsers = async (req, res) => {
         const sanitized = sanitizePublicUser(userDoc);
         const stats = await getFollowStatsForUser(userDoc._id);
 
+        const topPost = await Post.findOne({
+          author: userDoc._id,
+          isPublished: true,
+        })
+          .sort({ clapCount: -1, responseCount: -1, publishedAt: -1 })
+          .select("title subtitle slug clapCount responseCount publishedAt")
+          .lean();
+
         return {
           user: sanitized,
           stats,
+          highlight: topPost
+            ? {
+                title: topPost.title,
+                subtitle: topPost.subtitle,
+                slug: topPost.slug,
+                clapCount: topPost.clapCount ?? 0,
+                responseCount: topPost.responseCount ?? 0,
+                publishedAt: topPost.publishedAt,
+              }
+            : null,
         };
       })
     );

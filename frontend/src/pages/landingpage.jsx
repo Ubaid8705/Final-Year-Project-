@@ -14,12 +14,35 @@ const FEED_FILTERS = [
   { id: "featured", label: "Featured" },
 ];
 
+const deriveSuggestionKey = (user) => {
+  if (!user) {
+    return null;
+  }
+
+  if (user.id) {
+    return user.id.toString();
+  }
+
+  if (user._id) {
+    return user._id.toString();
+  }
+
+  if (user.username) {
+    return user.username.toString();
+  }
+
+  return null;
+};
+
 const LandingPage = () => {
   const [showInfoBox, setShowInfoBox] = useState(true);
   const [activeView, setActiveView] = useState("posts");
   const [postsSelection, setPostsSelection] = useState("forYou");
   const [premiumUsers, setPremiumUsers] = useState([]);
   const [loadingPremium, setLoadingPremium] = useState(true);
+  const [followSuggestions, setFollowSuggestions] = useState([]);
+  const [loadingFollowSuggestions, setLoadingFollowSuggestions] = useState(true);
+  const [followActionState, setFollowActionState] = useState({});
   const location = useLocation();
   const navigate = useNavigate();
   const socketContext = useSocketContext();
@@ -49,9 +72,122 @@ const LandingPage = () => {
     }
   }, [token]);
 
+  const fetchFollowSuggestions = useCallback(async () => {
+    setLoadingFollowSuggestions(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/users/suggestions?limit=6`, {
+        headers: token
+          ? {
+              Authorization: `Bearer ${token}`,
+            }
+          : undefined,
+      });
+
+      const data = await response.json().catch(() => ({}));
+
+      if (response.ok && Array.isArray(data.suggestions)) {
+        setFollowSuggestions(data.suggestions);
+      } else {
+        setFollowSuggestions([]);
+      }
+    } catch (error) {
+      console.error('Failed to load follow suggestions:', error);
+      setFollowSuggestions([]);
+    } finally {
+      setLoadingFollowSuggestions(false);
+    }
+  }, [token]);
+
+  const handleFollowToggle = useCallback(
+    async (user, { isFollowing } = {}) => {
+      if (!user?.username) {
+        return;
+      }
+
+      const targetUsername = user.username;
+      const suggestionKey = deriveSuggestionKey(user);
+
+      if (!token) {
+        navigate("/login", {
+          state: {
+            from: location?.pathname || "/",
+            message: "Sign in to follow writers",
+          },
+        });
+        return;
+      }
+
+      if (suggestionKey) {
+        setFollowActionState((previous) => ({
+          ...previous,
+          [suggestionKey]: true,
+        }));
+      }
+
+      const nextMethod = isFollowing ? "DELETE" : "POST";
+      const endpoint = `${API_BASE_URL}/api/users/${encodeURIComponent(targetUsername)}/follow`;
+
+      try {
+        const response = await fetch(endpoint, {
+          method: nextMethod,
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        const data = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+          throw new Error(data?.error || "Unable to update follow status");
+        }
+
+        setFollowSuggestions((previous) =>
+          previous.map((entry) => {
+            if (!entry?.user) {
+              return entry;
+            }
+
+            const entryKey = deriveSuggestionKey(entry.user);
+            const entryUsername = entry.user.username;
+
+            const matchesKey = suggestionKey && entryKey === suggestionKey;
+            const matchesUsername =
+              entryUsername &&
+              entryUsername.toString().toLowerCase() === targetUsername.toString().toLowerCase();
+
+            if (!matchesKey && !matchesUsername) {
+              return entry;
+            }
+
+            return {
+              ...entry,
+              isFollowing: !isFollowing,
+              stats: data?.stats ? { ...entry.stats, ...data.stats } : entry.stats,
+            };
+          })
+        );
+      } catch (error) {
+        console.error("Failed to update follow status:", error);
+      } finally {
+        if (suggestionKey) {
+          setFollowActionState((previous) => {
+            const next = { ...previous };
+            delete next[suggestionKey];
+            return next;
+          });
+        }
+      }
+    },
+    [token, navigate, location?.pathname]
+  );
+
   useEffect(() => {
     fetchPremiumUsers();
   }, [fetchPremiumUsers]);
+
+  useEffect(() => {
+    fetchFollowSuggestions();
+  }, [fetchFollowSuggestions]);
 
   useEffect(() => {
     const handleShowPosts = (event) => {
@@ -100,8 +236,8 @@ const LandingPage = () => {
   //   setActiveView("notifications");
   // };
   const handleStartWriting = () => {
-    navigate("/create-post");
-  }
+    navigate("/write");
+  };
 
   const isNotificationsView = activeView === "notifications";
 
@@ -174,7 +310,7 @@ const LandingPage = () => {
             <div className="suggestion-loading">Loading premium members...</div>
           ) : premiumUsers.length > 0 ? (
             premiumUsers.map((item) => (
-              <Suggesstion key={item.user.id} user={item.user} stats={item.stats} />
+              <Suggesstion key={item.user.id} user={item.user} stats={item.stats} highlight={item.highlight} />
             ))
           ) : (
             <div className="suggestion-empty">No premium members available</div>
@@ -214,7 +350,13 @@ const LandingPage = () => {
         </section>
 
         <section className="side-card">
-          <FollowSuggestions />
+          <FollowSuggestions
+            loading={loadingFollowSuggestions}
+            suggestions={followSuggestions}
+            onRetry={fetchFollowSuggestions}
+            onFollowToggle={handleFollowToggle}
+            pendingMap={followActionState}
+          />
         </section>
       </aside>
     </div>
