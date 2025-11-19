@@ -407,7 +407,7 @@ function Header() {
             <div className="profile-links">
               <div className="profile-link">
                 <span style={{ color: "#f7b500" }}>&#11088;</span> Become a
-                Medium member
+                BlogsHive member
               </div>
             </div>
             <div className="profile-divider"></div>

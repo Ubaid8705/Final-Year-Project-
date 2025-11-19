@@ -35,24 +35,24 @@ const OAuthCallback = () => {
     }
 
     redirectRef.current = true;
-    if (
-      typeof window !== "undefined" &&
-      typeof window.requestAnimationFrame === "function"
-    ) {
-      window.requestAnimationFrame(() => {
-        navigate("/", { replace: true });
-      });
-    } else {
-      setTimeout(() => {
-        navigate("/", { replace: true });
-      }, 0);
-    }
 
-    setTimeout(() => {
-      if (typeof window !== "undefined" && window.location.pathname !== "/") {
-        window.location.replace("/");
+    const fallbackNavigate = () => {
+      try {
+        navigate("/", { replace: true });
+      } catch (error) {
+        console.warn("SPA navigate fallback failed, forcing hard redirect", error);
       }
-    }, 600);
+    };
+
+    if (typeof window !== "undefined") {
+      const targetUrl = `${window.location.origin}/`;
+      // Ensure SPA navigation happens first so React Router updates immediately
+      fallbackNavigate();
+      // Then force a hard redirect to guarantee we land on the home feed
+      window.location.replace(targetUrl);
+    } else {
+      fallbackNavigate();
+    }
   }, [navigate]);
 
   //eslint-disable-next-line react-hooks/exhaustive-deps
@@ -60,10 +60,13 @@ const OAuthCallback = () => {
     let isMounted = true;
 
     if (processedSearchRef.current === location.search) {
-      return undefined;
+      return () => {
+        isMounted = false;
+        processedSearchRef.current = null;
+      };
     }
 
-    processedSearchRef.current = location.search;
+    processedSearchRef.current = location.search || "";
 
     const processOAuth = async () => {
       const params = new URLSearchParams(location.search);
@@ -104,6 +107,7 @@ const OAuthCallback = () => {
 
     return () => {
       isMounted = false;
+      processedSearchRef.current = null;
     };
   }, [location.search, completeOAuthLogin, triggerRedirect]);
 
@@ -112,15 +116,18 @@ const OAuthCallback = () => {
       return;
     }
 
-    if (status !== "success") {
-      return;
-    }
-
     if (loading) {
       return;
     }
 
+    if (status === "error") {
+      return;
+    }
+
     if (user && token) {
+      if (status !== "success") {
+        setStatus("success");
+      }
       triggerRedirect();
     }
   }, [status, loading, user, token, triggerRedirect]);

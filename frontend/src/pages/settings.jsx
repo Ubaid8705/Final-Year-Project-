@@ -594,7 +594,7 @@ export default function Settings() {
       },
       {
         id: "digestFrequency",
-        label: "Medium Digest",
+        label: "BlogsHive Digest",
         value: settingsState.digestFrequency,
         supporting: "Choose how often we send you reading inspiration.",
         field: "digestFrequency",

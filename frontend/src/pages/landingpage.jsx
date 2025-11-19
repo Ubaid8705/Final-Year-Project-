@@ -192,7 +192,7 @@ const LandingPage = () => {
             >
               &#10005;
             </button>
-            <h3 className="info-title">Writing on Medium</h3>
+            <h3 className="info-title">Writing on BlogsHive</h3>
             <ul className="info-list">
               <li>New writer FAQ</li>
               <li>Expert writing advice</li>

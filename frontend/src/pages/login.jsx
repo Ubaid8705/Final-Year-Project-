@@ -370,7 +370,7 @@ const Login = () => {
 
   const renderSignupScreen = () => (
     <div className="auth-container">
-      <h1>Join Medium.</h1>
+      <h1>Join BlogsHive.</h1>
       <div className="auth-buttons">
         <button className="social-btn google" onClick={() => redirectToOAuth("google")}>
           <GoogleIcon className="social-btn__icon" />
