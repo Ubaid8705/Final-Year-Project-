@@ -167,50 +167,63 @@ const LandingPage = () => {
           <PostsFeed selection={postsSelection} />
         )}
       </div>
-      <div className="side-content">
-        <p>Staff Picks</p>
-        {loadingPremium ? (
-          <div className="suggestion-loading">Loading premium members...</div>
-        ) : premiumUsers.length > 0 ? (
-          premiumUsers.map((item) => (
-            <Suggesstion key={item.user.id} user={item.user} stats={item.stats} />
-          ))
-        ) : (
-          <div className="suggestion-empty">No premium members available</div>
-        )}
-        <button
-          className="suggestion-desc"
-          onClick={() => alert("See the full list clicked!")}
-        >
-          See the full list
-        </button>
+      <aside className="side-content" aria-label="Additional recommendations">
+        <section className="side-card" aria-live="polite">
+          <h2 className="side-card__title">Staff Picks</h2>
+          {loadingPremium ? (
+            <div className="suggestion-loading">Loading premium members...</div>
+          ) : premiumUsers.length > 0 ? (
+            premiumUsers.map((item) => (
+              <Suggesstion key={item.user.id} user={item.user} stats={item.stats} />
+            ))
+          ) : (
+            <div className="suggestion-empty">No premium members available</div>
+          )}
+          <button
+            className="suggestion-desc side-card__link"
+            type="button"
+            onClick={() => alert("See the full list clicked!")}
+          >
+            See the full list
+          </button>
+        </section>
+
         {showInfoBox && (
-          <div className="info-box">
-            <span
+          <section className="side-card side-card--highlight">
+            <button
               className="info-close"
+              type="button"
               onClick={() => setShowInfoBox(false)}
-              title="Close"
+              title="Hide writing tips"
+              aria-label="Hide writing tips"
             >
               &#10005;
-            </span>
-            <div className="info-title">Writing on Medium</div>
+            </button>
+            <h3 className="info-title">Writing on Medium</h3>
             <ul className="info-list">
               <li>New writer FAQ</li>
               <li>Expert writing advice</li>
               <li>Grow your readership</li>
             </ul>
-            <button className="info-action" onClick={handleStartWriting}>Start writing</button>
-          </div>
+            <button className="info-action" type="button" onClick={handleStartWriting}>Start writing</button>
+          </section>
         )}
-        <Recomendations />
-        <button
-          className="suggestion-desc"
-          onClick={() => alert("See more topics clicked!")}
-        >
-          See more topics
-        </button>
-        <FollowSuggestions />
-      </div>
+
+        <section className="side-card">
+          <Recomendations />
+          <button
+            className="suggestion-desc side-card__link"
+            type="button"
+            onClick={() => alert("See more topics clicked!")}
+          >
+            See more topics
+          </button>
+        </section>
+
+        <section className="side-card">
+          <FollowSuggestions />
+        </section>
+      </aside>
     </div>
   );
 };

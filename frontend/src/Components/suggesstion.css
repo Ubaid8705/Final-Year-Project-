@@ -3,7 +3,8 @@
   flex-direction: column;
   gap: 12px;
   padding: 16px;
-  margin: 10px 5%;
+  margin: 0;
+  width: 100%;
   border-radius: 12px;
   background: #ffffff;
   border: 1px solid rgba(0, 0, 0, 0.06);
@@ -11,6 +12,7 @@
   cursor: pointer;
   text-decoration: none;
   color: inherit;
+  box-sizing: border-box;
 }
 
 .suggestion-post:hover {
