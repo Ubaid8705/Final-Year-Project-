@@ -47,6 +47,7 @@ export const googleCallback = (req, res, next) => {
     }
 
     const redirectUrl = buildOAuthRedirectUrl(user);
+    console.log('OAuth Redirect URL:', redirectUrl);
     res.redirect(redirectUrl);
   })(req, res, next);
 };

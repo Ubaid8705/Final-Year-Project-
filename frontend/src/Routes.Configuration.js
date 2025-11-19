@@ -14,6 +14,7 @@ import { FollowersPage, FollowingPage } from "./pages/connections";
 import OAuthCallback from "./pages/oauth-callback";
 import Notifications from "./pages/notifications";
 import ResetPassword from "./pages/reset-password";
+import TermsOfService from "./pages/terms";
 
 // Protected Route wrapper component (uses auth context)
 export function ProtectedRoute({ children }) {
@@ -51,6 +52,7 @@ export const routes = [
   { path: "/reset-password", element: <ResetPassword /> },
   { path: "/oauth-callback", element: <OAuthCallback /> },
   { path: "/about", element: <AboutPage /> },
+  { path: "/terms", element: <TermsOfService /> },
   {
     path: "/",
     element: (

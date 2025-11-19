@@ -85,6 +85,11 @@ function Header() {
     navigate("/about");
   };
 
+  const handleTerms = () => {
+    setShowMenu(false);
+    navigate("/terms");
+  };
+
   const handleKeyActivate = (event, action) => {
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
@@ -397,9 +402,6 @@ function Header() {
               >
                 <span>&#9881;</span> Settings
               </div>
-              <div className="profile-link">
-                <span>&#10067;</span> Help
-              </div>
             </div>
             <div className="profile-divider"></div>
             <div className="profile-links">
@@ -435,7 +437,15 @@ function Header() {
               >
                 About
               </span>
-              <span className="profile-footer-link">Terms</span>
+              <span
+                className="profile-footer-link"
+                onClick={handleTerms}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(event) => handleKeyActivate(event, handleTerms)}
+              >
+                Terms
+              </span>
             </div>
           </div>
         )}

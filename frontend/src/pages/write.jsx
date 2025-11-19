@@ -69,28 +69,6 @@ const buildFallbackAvatar = (seed) =>
     seed || "Writer"
   )}`;
 
-const loadImageDimensions = (src) =>
-  new Promise((resolve, reject) => {
-    if (!src) {
-      reject(new Error("Missing image source"));
-      return;
-    }
-
-    if (typeof window === "undefined" || typeof window.Image !== "function") {
-      resolve({ width: null, height: null });
-      return;
-    }
-
-    const img = new window.Image();
-    img.onload = () => {
-      const width = img.naturalWidth || img.width || null;
-      const height = img.naturalHeight || img.height || null;
-      resolve({ width, height });
-    };
-    img.onerror = () => reject(new Error("Failed to load image"));
-    img.src = src;
-  });
-
 const formatRelativeTimestamp = (timestamp) => {
   if (!timestamp) {
     return "Draft in progress";
@@ -1660,22 +1638,18 @@ const Write = ({ postId, authorId }) => {
         return;
       }
 
-      let width = asset.width;
-      let height = asset.height;
+      const widthCandidate = Number(asset.width);
+      const heightCandidate = Number(asset.height);
+      const width = Number.isFinite(widthCandidate) && widthCandidate > 0 ? widthCandidate : null;
+      const height = Number.isFinite(heightCandidate) && heightCandidate > 0 ? heightCandidate : null;
 
-      if ((!width || !height) && displayUrl) {
-        try {
-          const dimensions = await loadImageDimensions(displayUrl);
-          width = width || dimensions.width;
-          height = height || dimensions.height;
-        } catch (error) {
-          // ignore measurement failures; dimensions remain undefined
-        }
-      }
-
+      const aspectRatioCandidate = Number(asset.aspectRatio);
       const aspectRatio =
-        asset.aspectRatio ||
-        (width && height ? Number((width / height).toFixed(4)) : null);
+        (Number.isFinite(aspectRatioCandidate) && aspectRatioCandidate > 0
+          ? aspectRatioCandidate
+          : width && height
+          ? Number((width / height).toFixed(4))
+          : null);
 
       const attributes = {
         src: displayUrl,

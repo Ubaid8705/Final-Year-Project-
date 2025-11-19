@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { API_BASE_URL } from "../config";
 import './login.css';
@@ -335,7 +335,8 @@ const Login = () => {
         <div className="auth-footer">
           <p>Already have an account? <button onClick={() => updateView("welcome")}>Sign in</button></p>
           <p className="terms">
-            By clicking "Create Account", you agree to Medium's Terms of Service and acknowledge our Privacy Policy
+            By clicking "Create account", you agree to the BlogsHive&nbsp;
+            <Link to="/terms">Terms of Service</Link>.
           </p>
         </div>
       )}
@@ -363,12 +364,6 @@ const Login = () => {
       </div>
       <p className="auth-footer">
         No account? <button onClick={() => updateView("signup")}>Create one</button>
-      </p>
-      <p className="auth-help">
-        Forgot email or trouble signing in?{" "}
-        <button type="button" className="link" onClick={() => alert("Help (mock)")}>
-          Get help
-        </button>.
       </p>
     </div>
   );

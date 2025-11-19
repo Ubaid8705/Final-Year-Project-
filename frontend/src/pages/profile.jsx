@@ -1581,11 +1581,11 @@ const Profile = () => {
           </div>
 
           <div className="profile-links">
-            {["Help", "About", "Blog", "Privacy", "Terms", "Text to speech"].map((link) => (
-              <button key={link} type="button">
-                {link}
-              </button>
-            ))}
+            <Link to="/about">About</Link>
+            <Link to="/terms">Terms</Link>
+            <span>Blog</span>
+            <span>Privacy</span>
+            <span>Text to speech</span>
           </div>
         </aside>
       </div>

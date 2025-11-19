@@ -407,15 +407,18 @@
   color: #6b6b6b;
 }
 
-.profile-links button {
-  border: none;
-  background: transparent;
+.profile-links a,
+.profile-links span {
   color: inherit;
-  cursor: pointer;
   font-size: 0.85rem;
+  text-decoration: none;
 }
 
-.profile-links button:hover {
+.profile-links a {
+  cursor: pointer;
+}
+
+.profile-links a:hover {
   color: #1a8917;
 }
 

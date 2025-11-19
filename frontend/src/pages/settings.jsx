@@ -5,6 +5,7 @@ import React, {
   useRef,
   useState,
 } from "react";
+import { Link } from "react-router-dom";
 import { API_BASE_URL } from "../config";
 import { useAuth } from "../contexts/AuthContext";
 import "./settings.css";
@@ -12,13 +13,6 @@ import "./settings.css";
 const TABS = [
   { id: "account", label: "Account", hint: "Profile & security", icon: "👤" },
   { id: "publishing", label: "Publishing", hint: "Stories & distribution", icon: "📝" },
-];
-
-const HELP_ARTICLES = [
-  "Sign in or sign up to Medium",
-  "Your profile page",
-  "Writing and publishing your first story",
-  "About Medium's distribution system",
 ];
 
 const PREMIUM_BADGE = "\u2726"; // &#10022;
@@ -971,15 +965,16 @@ export default function Settings() {
 
           <div className="settings-card settings-card--compact">
             <div className="settings-card__header settings-card__header--subtle">
-              <h3>Suggested help guides</h3>
-              <p>Get quick answers to the most common questions.</p>
+              <h3>Policies & resources</h3>
+              <p>Review the guidelines that keep BlogsHive safe.</p>
             </div>
-            <ul className="settings-help">
-              {HELP_ARTICLES.map((article) => (
-                <li key={article}>
-                  <button type="button">{article}</button>
-                </li>
-              ))}
+            <ul className="settings-links">
+              <li>
+                <Link to="/terms">Terms of Service</Link>
+              </li>
+              <li>
+                <a href="mailto:support@blogshive.com">Contact support</a>
+              </li>
             </ul>
           </div>
         </aside>
