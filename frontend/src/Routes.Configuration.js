@@ -7,6 +7,7 @@ import PostView from "./pages/postview";
 import Write from "./pages/write";
 import LandingPage from "./pages/landingpage";
 import TopicsPage from "./pages/topics";
+import AboutPage from "./pages/about";
 import Profile from "./pages/profile";
 import ProfileStories from "./pages/profile-stories";
 import { FollowersPage, FollowingPage } from "./pages/connections";
@@ -49,6 +50,7 @@ export const routes = [
   { path: "/login", element: <Login /> },
   { path: "/reset-password", element: <ResetPassword /> },
   { path: "/oauth-callback", element: <OAuthCallback /> },
+  { path: "/about", element: <AboutPage /> },
   {
     path: "/",
     element: (

@@ -80,6 +80,11 @@ function Header() {
     navigate(isAuthenticated ? "/settings" : "/login");
   };
 
+  const handleAbout = () => {
+    setShowMenu(false);
+    navigate("/about");
+  };
+
   const handleKeyActivate = (event, action) => {
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
@@ -411,9 +416,25 @@ function Header() {
               {displayEmail && <div className="profile-email">{displayEmail}</div>}
             </div>
             <div className="profile-footer">
-              <span className="profile-footer-link">Home</span>
+              <span
+                className="profile-footer-link"
+                onClick={handleHome}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(event) => handleKeyActivate(event, handleHome)}
+              >
+                Home
+              </span>
               <span className="profile-footer-link">Blog</span>
-              <span className="profile-footer-link">About</span>
+              <span
+                className="profile-footer-link"
+                onClick={handleAbout}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(event) => handleKeyActivate(event, handleAbout)}
+              >
+                About
+              </span>
               <span className="profile-footer-link">Terms</span>
             </div>
           </div>
