@@ -89,10 +89,6 @@
   margin: 0;
 }
 
-.side-card .follow-more {
-  margin-top: 4px;
-}
-
 .side-card--highlight {
   background: linear-gradient(135deg, #cce6ff 0%, #e7f3ff 100%);
   border-color: transparent;

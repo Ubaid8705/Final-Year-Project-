@@ -38,9 +38,6 @@ const FollowSuggestions = () => (
         </li>
       ))}
     </ul>
-    <button className="follow-more" onClick={() => alert("See more suggestions clicked!")}>
-      See more suggestions
-    </button>
   </div>
 );
 

@@ -179,13 +179,6 @@ const LandingPage = () => {
           ) : (
             <div className="suggestion-empty">No premium members available</div>
           )}
-          <button
-            className="suggestion-desc side-card__link"
-            type="button"
-            onClick={() => alert("See the full list clicked!")}
-          >
-            See the full list
-          </button>
         </section>
 
         {showInfoBox && (
@@ -214,7 +207,7 @@ const LandingPage = () => {
           <button
             className="suggestion-desc side-card__link"
             type="button"
-            onClick={() => alert("See more topics clicked!")}
+            onClick={() => navigate("/topics")}
           >
             See more topics
           </button>

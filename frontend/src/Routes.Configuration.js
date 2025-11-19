@@ -6,6 +6,7 @@ import Settings from "./pages/settings";
 import PostView from "./pages/postview";
 import Write from "./pages/write";
 import LandingPage from "./pages/landingpage";
+import TopicsPage from "./pages/topics";
 import Profile from "./pages/profile";
 import ProfileStories from "./pages/profile-stories";
 import { FollowersPage, FollowingPage } from "./pages/connections";
@@ -53,6 +54,14 @@ export const routes = [
     element: (
       <ProtectedRoute>
         <LandingPage />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: "/topics",
+    element: (
+      <ProtectedRoute>
+        <TopicsPage />
       </ProtectedRoute>
     ),
   },
