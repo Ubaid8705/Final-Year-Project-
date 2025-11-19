@@ -6,6 +6,8 @@ import {
   getUserByUsername,
   updateTopics,
   getSuggestedUsers,
+  getPremiumUsers,
+  searchUsers,
 } from "../controllers/userController.js";
 import {
   followUser,
@@ -30,6 +32,8 @@ router.put("/update", authenticate, updateUser);
 router.put("/me/topics", authenticate, updateTopics);
 router.delete("/delete", authenticate, deleteUser);
 router.get("/suggestions", optionalAuthenticate, getSuggestedUsers);
+router.get("/premium", optionalAuthenticate, getPremiumUsers);
+router.get("/search", optionalAuthenticate, searchUsers);
 
 router.post("/:username/follow", authenticate, followUser);
 router.delete("/:username/follow", authenticate, unfollowUser);

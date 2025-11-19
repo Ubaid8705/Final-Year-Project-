@@ -1470,3 +1470,34 @@ export const listDrafts = async (req, res) => {
     res.status(500).json({ error: "Failed to fetch drafts" });
   }
 };
+
+export const searchPosts = async (req, res) => {
+  try {
+    const query = req.query.q?.trim();
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 10, 1), 50);
+
+    if (!query) {
+      return res.json({ posts: [] });
+    }
+
+    const searchRegex = new RegExp(query, "i");
+    const posts = await Post.find({
+      isPublished: true,
+      $or: [
+        { title: searchRegex },
+        { subtitle: searchRegex },
+        { tags: searchRegex },
+      ],
+    })
+      .sort({ publishedAt: -1 })
+      .limit(limit)
+      .populate("author", "username name avatar bio membershipStatus")
+      .lean();
+
+    const hydrated = posts.map(hydratePost);
+
+    res.json({ posts: hydrated });
+  } catch (error) {
+    res.status(500).json({ error: "Unable to search posts" });
+  }
+};

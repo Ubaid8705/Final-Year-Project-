@@ -9,12 +9,14 @@ import {
   listAuthorPosts,
   listDrafts,
   reportPost,
+  searchPosts,
 } from "../controllers/postController.js";
 import { authenticate, optionalAuthenticate } from "../middleware/authMiddleware.js";
 
 const router = express.Router();
 
 router.get("/", optionalAuthenticate, listPosts);
+router.get("/search", optionalAuthenticate, searchPosts);
 router.get("/drafts", authenticate, listDrafts);
 router.get("/author/:username", optionalAuthenticate, listAuthorPosts);
 router.get("/:idOrSlug", optionalAuthenticate, getPost);

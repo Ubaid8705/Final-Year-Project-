@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import "./landingpage.css";
 import Suggesstion from "../Components/Suggesstion";
@@ -7,6 +7,8 @@ import FollowSuggestions from "../Components/followsuggestions";
 import Notifications from "./notifications";
 import PostsFeed from "../Components/PostsFeed";
 import { useSocketContext } from "../contexts/SocketContext";
+import { useAuth } from "../contexts/AuthContext";
+import { API_BASE_URL } from "../config";
 const FEED_FILTERS = [
   { id: "forYou", label: "For you" },
   { id: "featured", label: "Featured" },
@@ -16,10 +18,40 @@ const LandingPage = () => {
   const [showInfoBox, setShowInfoBox] = useState(true);
   const [activeView, setActiveView] = useState("posts");
   const [postsSelection, setPostsSelection] = useState("forYou");
+  const [premiumUsers, setPremiumUsers] = useState([]);
+  const [loadingPremium, setLoadingPremium] = useState(true);
   const location = useLocation();
   const navigate = useNavigate();
   const socketContext = useSocketContext();
+  const { token } = useAuth();
   const unreadCount = socketContext?.unreadCount ?? 0;
+
+  const fetchPremiumUsers = useCallback(async () => {
+    setLoadingPremium(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/users/premium?limit=3`, {
+        headers: token
+          ? {
+              Authorization: `Bearer ${token}`,
+            }
+          : undefined,
+      });
+
+      const data = await response.json().catch(() => ({}));
+
+      if (response.ok && Array.isArray(data.premiumUsers)) {
+        setPremiumUsers(data.premiumUsers);
+      }
+    } catch (error) {
+      console.error('Failed to load premium users:', error);
+    } finally {
+      setLoadingPremium(false);
+    }
+  }, [token]);
+
+  useEffect(() => {
+    fetchPremiumUsers();
+  }, [fetchPremiumUsers]);
 
   useEffect(() => {
     const handleShowPosts = (event) => {
@@ -137,10 +169,15 @@ const LandingPage = () => {
       </div>
       <div className="side-content">
         <p>Staff Picks</p>
-        <Suggesstion />
-        <Suggesstion />
-        <Suggesstion />
-        <Suggesstion />
+        {loadingPremium ? (
+          <div className="suggestion-loading">Loading premium members...</div>
+        ) : premiumUsers.length > 0 ? (
+          premiumUsers.map((item) => (
+            <Suggesstion key={item.user.id} user={item.user} stats={item.stats} />
+          ))
+        ) : (
+          <div className="suggestion-empty">No premium members available</div>
+        )}
         <button
           className="suggestion-desc"
           onClick={() => alert("See the full list clicked!")}

@@ -634,3 +634,66 @@ export const getSuggestedUsers = async (req, res) => {
     res.status(500).json({ error: "Unable to load suggestions" });
   }
 };
+
+export const getPremiumUsers = async (req, res) => {
+  try {
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 3, 1), 10);
+
+    // Find all premium users
+    const premiumUsers = await User.find({ membershipStatus: true })
+      .select(PUBLIC_USER_PROJECTION)
+      .lean();
+
+    if (!premiumUsers.length) {
+      return res.json({ premiumUsers: [] });
+    }
+
+    // Shuffle array for randomness
+    const shuffled = premiumUsers.sort(() => Math.random() - 0.5);
+    const selected = shuffled.slice(0, limit);
+
+    const payload = await Promise.all(
+      selected.map(async (userDoc) => {
+        const sanitized = sanitizePublicUser(userDoc);
+        const stats = await getFollowStatsForUser(userDoc._id);
+
+        return {
+          user: sanitized,
+          stats,
+        };
+      })
+    );
+
+    res.json({ premiumUsers: payload });
+  } catch (error) {
+    res.status(500).json({ error: "Unable to load premium users" });
+  }
+};
+
+export const searchUsers = async (req, res) => {
+  try {
+    const query = req.query.q?.trim();
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 10, 1), 50);
+
+    if (!query) {
+      return res.json({ users: [] });
+    }
+
+    const searchRegex = new RegExp(query, "i");
+    const users = await User.find({
+      $or: [
+        { username: searchRegex },
+        { name: searchRegex },
+      ],
+    })
+      .select(PUBLIC_USER_PROJECTION)
+      .limit(limit)
+      .lean();
+
+    const payload = users.map((userDoc) => sanitizePublicUser(userDoc));
+
+    res.json({ users: payload });
+  } catch (error) {
+    res.status(500).json({ error: "Unable to search users" });
+  }
+};
