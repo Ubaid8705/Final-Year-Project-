@@ -116,6 +116,7 @@ const PostSchema = new mongoose.Schema(
     mediumUrl: { type: String, trim: true },
     isPublished: { type: Boolean, default: false },
     isLocked: { type: Boolean, default: false },
+    isPremiumContent: { type: Boolean, default: false },
     allowResponses: { type: Boolean, default: true },
     responseMode: {
       type: String,

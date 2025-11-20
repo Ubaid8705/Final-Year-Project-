@@ -91,6 +91,11 @@ function Header() {
     navigate("/terms");
   };
 
+  const handlePlans = () => {
+    setShowMenu(false);
+    navigate("/plans");
+  };
+
   const handleKeyActivate = (event, action) => {
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
@@ -317,6 +322,13 @@ function Header() {
         )}
       </div>
       <div className="header-actions">
+        <button
+          type="button"
+          className={`plans-btn${isPremium ? " plans-btn--member" : ""}`}
+          onClick={handlePlans}
+        >
+          {isPremium ? "Premium" : "Upgrade"}
+        </button>
         <button className="write-btn" onClick={handleWrite}>
           <span className="write-icon">&#9998;</span> Write
         </button>
@@ -406,9 +418,17 @@ function Header() {
             </div>
             <div className="profile-divider"></div>
             <div className="profile-links">
-              <div className="profile-link">
-                <span style={{ color: "#f7b500" }}>&#11088;</span> Become a
-                BlogsHive member
+              <div
+                className="profile-link profile-link--plans"
+                onClick={handlePlans}
+                onKeyDown={(event) => handleKeyActivate(event, handlePlans)}
+                role="button"
+                tabIndex={0}
+              >
+                <span aria-hidden="true" style={{ color: isPremium ? "#1a8917" : "#f7b500" }}>
+                  {isPremium ? "\u2726" : "\u2727"}
+                </span>
+                {isPremium ? "Manage membership" : "Upgrade to Premium"}
               </div>
             </div>
             <div className="profile-divider"></div>

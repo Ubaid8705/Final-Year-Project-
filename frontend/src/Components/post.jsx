@@ -170,6 +170,7 @@ const Post = ({
   }, [targetPath]);
 
   const canNavigate = Boolean(targetPath);
+  const viewerIsPremium = Boolean(user?.membershipStatus);
 
   const viewerOwnsPost = useMemo(() => {
     if (!user) {
@@ -208,6 +209,13 @@ const Post = ({
   }, [author, safePost, user]);
 
   const allowEdit = Boolean(canEdit || viewerOwnsPost);
+  const isPremiumContent = Boolean(safePost.isPremiumContent);
+  const isLockedForViewer = isPremiumContent && !viewerOwnsPost && !viewerIsPremium;
+  const cardLabel = canNavigate
+    ? isLockedForViewer
+      ? `Unlock premium story ${displayTitle}`
+      : `Open story ${displayTitle}`
+    : undefined;
 
   const handleCardNavigate = useCallback(
     (event) => {
@@ -225,6 +233,13 @@ const Post = ({
 
       setMenuOpen(false);
 
+      if (isLockedForViewer) {
+        navigate("/plans", {
+          state: targetPath ? { from: targetPath } : undefined,
+        });
+        return;
+      }
+
       if (event?.metaKey || event?.ctrlKey) {
         if (typeof window !== "undefined") {
           window.open(targetPath, "_blank", "noopener,noreferrer");
@@ -236,7 +251,7 @@ const Post = ({
 
       navigate(targetPath);
     },
-    [canNavigate, navigate, targetPath]
+    [canNavigate, isLockedForViewer, navigate, targetPath]
   );
 
   const handleCardKeyDown = useCallback(
@@ -248,10 +263,16 @@ const Post = ({
       if (event.key === "Enter" || event.key === " ") {
         event.preventDefault();
         setMenuOpen(false);
-        navigate(targetPath);
+        if (isLockedForViewer) {
+          navigate("/plans", {
+            state: targetPath ? { from: targetPath } : undefined,
+          });
+        } else {
+          navigate(targetPath);
+        }
       }
     },
-    [canNavigate, navigate, targetPath]
+    [canNavigate, isLockedForViewer, navigate, targetPath]
   );
 
   useEffect(() => {
@@ -519,15 +540,31 @@ const Post = ({
         "post-card",
         `post-card--${variant}`,
         hasImage ? "" : "post-card--no-image",
-        canNavigate ? "post-card--interactive" : ""
+        canNavigate ? "post-card--interactive" : "",
+        isLockedForViewer ? "post-card--locked" : ""
       )}
       onClick={canNavigate ? handleCardNavigate : undefined}
       onKeyDown={canNavigate ? handleCardKeyDown : undefined}
       tabIndex={canNavigate ? 0 : undefined}
       role={canNavigate ? "link" : undefined}
-      aria-label={canNavigate ? `Open story ${displayTitle}` : undefined}
+      aria-label={cardLabel}
     >
       <div className="post-card__body">
+        {isPremiumContent && (
+          <div
+            className={classList(
+              "post-card__premium-chip",
+              isLockedForViewer
+                ? "post-card__premium-chip--locked"
+                : "post-card__premium-chip--access"
+            )}
+          >
+            <span className="post-card__premium-chip-icon" aria-hidden="true">
+              {isLockedForViewer ? "🔒" : PREMIUM_BADGE}
+            </span>
+            <span>{isLockedForViewer ? "Premium — Upgrade to read" : "Premium story"}</span>
+          </div>
+        )}
         <header className="post-card__meta">
           <img src={authorAvatar} alt={displayAuthor} className="post-card__author" />
           <div className="post-card__byline">
@@ -648,6 +685,11 @@ const Post = ({
       {hasImage && (
         <div className="post-card__media">
           <img src={coverImage} alt={displayTitle} loading="lazy" />
+          {isLockedForViewer && (
+            <div className="post-card__media-lock" aria-hidden="true">
+              🔒
+            </div>
+          )}
         </div>
       )}
     </article>

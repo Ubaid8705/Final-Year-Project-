@@ -17,6 +17,21 @@
   cursor: pointer;
 }
 
+.post-card--locked {
+  background: linear-gradient(135deg, rgba(248, 250, 252, 0.94), rgba(241, 245, 249, 0.98));
+  border-color: rgba(15, 23, 42, 0.08);
+}
+
+.post-card--locked .post-card__summary {
+  color: rgba(75, 85, 99, 0.7);
+}
+
+.post-card--locked .post-card__title,
+.post-card--locked .post-card__stats,
+.post-card--locked .post-card__action-btn {
+  opacity: 0.88;
+}
+
 .post-card--interactive:focus-visible {
   outline: 3px solid rgba(26, 137, 23, 0.6);
   outline-offset: 6px;
@@ -37,6 +52,42 @@
   flex-direction: column;
   gap: 12px;
   min-width: 0;
+}
+
+.post-card__premium-chip {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-transform: uppercase;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  background: rgba(79, 70, 229, 0.12);
+  color: #4338ca;
+  box-shadow: 0 10px 24px -16px rgba(79, 70, 229, 0.6);
+}
+
+.post-card__premium-chip--access {
+  background: rgba(16, 185, 129, 0.12);
+  color: #0f766e;
+  box-shadow: 0 10px 24px -16px rgba(16, 185, 129, 0.6);
+}
+
+.post-card__premium-chip--locked {
+  background: rgba(249, 115, 22, 0.14);
+  color: #b45309;
+  box-shadow: 0 10px 24px -18px rgba(249, 115, 22, 0.65);
+}
+
+.post-card__premium-chip-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
 }
 
 .post-card__meta {
@@ -279,6 +330,30 @@
   border-radius: 14px;
 }
 
+.post-card__media::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(160deg, rgba(15, 23, 42, 0) 40%, rgba(15, 23, 42, 0.35));
+  opacity: 0;
+  transition: opacity 0.25s ease;
+}
+
+.post-card--locked .post-card__media::after {
+  opacity: 1;
+}
+
+.post-card__media-lock {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 2.1rem;
+  color: rgba(255, 255, 255, 0.9);
+  text-shadow: 0 12px 24px rgba(15, 23, 42, 0.35);
+  pointer-events: none;
+}
+
 .post-card__media img {
   width: 100%;
   height: 100%;
@@ -346,6 +421,11 @@
   .post-card__author {
     width: 36px;
     height: 36px;
+  }
+
+  .post-card__premium-chip {
+    font-size: 0.76rem;
+    padding: 5px 12px;
   }
 
   .post-card__title {

@@ -41,6 +41,24 @@ const ensureUniqueSlug = async (baseTitle, excludeId = null) => {
 
 const VALID_VISIBILITY_VALUES = ["PUBLIC", "UNLISTED", "PRIVATE"];
 const RESPONSE_MODE_VALUES = ["EVERYONE", "FOLLOWERS", "DISABLED"];
+const FREE_USER_POST_LIMIT = 5;
+const FREE_USER_IMAGE_LIMIT = 3;
+
+const isPremiumUser = (user) => Boolean(user?.membershipStatus);
+
+const countImageBlocks = (content = []) =>
+  Array.isArray(content)
+    ? content.reduce((total, block) => {
+        if (!block || typeof block !== "object") {
+          return total;
+        }
+        const type = (block.type || "").toString().toUpperCase();
+        if (type === "IMG" && block.image) {
+          return total + 1;
+        }
+        return total;
+      }, 0)
+    : 0;
 
 const toVisibilityToken = (value) => {
   if (typeof value !== "string") {
@@ -619,6 +637,7 @@ export const hydratePost = (postDoc) => {
     allowResponses,
     responseMode,
     distributionMode: normalizedDistribution,
+    isPremiumContent: Boolean(post.isPremiumContent),
     inheritsDefaults,
     settingsSnapshot: snapshot,
     visibility: normalizedVisibility,
@@ -657,6 +676,8 @@ export const listPosts = async (req, res) => {
 
     const filter = {};
     const viewerId = req.user?._id;
+    const viewerIdString = viewerId ? viewerId.toString() : null;
+    const viewerIsPremium = isPremiumUser(req.user);
     const hiddenPostDocs = viewerId
       ? await HiddenPost.find({ user: viewerId }).select("post").lean()
       : [];
@@ -701,6 +722,16 @@ export const listPosts = async (req, res) => {
       }
       filter.author = user._id;
       selectedAuthorId = user._id;
+    }
+
+    const authoredByViewer = Boolean(viewerIdString) &&
+      ((filter.author && typeof filter.author.toString === "function" && filter.author.toString() === viewerIdString) ||
+        (selectedAuthorId && typeof selectedAuthorId.toString === "function" && selectedAuthorId.toString() === viewerIdString));
+
+    const shouldFilterPremium = !viewerIsPremium && !authoredByViewer;
+
+    if (shouldFilterPremium) {
+      filter.isPremiumContent = { $ne: true };
     }
 
     if (resolvedScope === "featured" && !filter.author) {
@@ -765,6 +796,10 @@ export const listPosts = async (req, res) => {
 
       if (hiddenPostIds.length > 0) {
         matchStage._id = { $nin: hiddenPostIds };
+      }
+
+      if (shouldFilterPremium) {
+        matchStage.isPremiumContent = { $ne: true };
       }
 
       const pipeline = [
@@ -951,6 +986,17 @@ export const getPost = async (req, res) => {
       return res.status(404).json({ error: "Post not found" });
     }
 
+    const viewerIsPremium = isPremiumUser(req.user);
+    const viewerOwnsPost =
+      req.user &&
+      post.author &&
+      post.author._id &&
+      post.author._id.toString() === req.user._id.toString();
+
+    if (post.isPremiumContent && !viewerIsPremium && !viewerOwnsPost) {
+      return res.status(403).json({ error: "Upgrade to BlogsHive Premium to unlock this story." });
+    }
+
     res.json(hydratePost(post));
   } catch (error) {
     res.status(500).json({ error: "Failed to fetch post" });
@@ -971,6 +1017,29 @@ export const createPost = async (req, res) => {
     const normalizedCoverMeta = normalizeCoverImageMeta(req.body.coverImageMeta);
     const normalizedContent = normalizeContentBlocks(content);
     const resolvedCoverImage = resolveCoverImageValue(coverImage, normalizedCoverMeta);
+    const premiumAuthor = isPremiumUser(req.user);
+
+    if (!premiumAuthor) {
+      const imageCount = countImageBlocks(normalizedContent);
+      if (imageCount > FREE_USER_IMAGE_LIMIT) {
+        return res.status(403).json({
+          error: `Add up to ${FREE_USER_IMAGE_LIMIT} images per story on the free plan. Upgrade to BlogsHive Premium to add more visuals.`,
+        });
+      }
+
+      if (isPublished) {
+        const publishedCount = await Post.countDocuments({
+          author: req.user._id,
+          isPublished: true,
+        });
+
+        if (publishedCount >= FREE_USER_POST_LIMIT) {
+          return res.status(403).json({
+            error: `Free members can publish up to ${FREE_USER_POST_LIMIT} stories. Upgrade to BlogsHive Premium for unlimited publishing.`,
+          });
+        }
+      }
+    }
 
     if (!title) {
       return res.status(400).json({ error: "Title is required" });
@@ -1006,6 +1075,7 @@ export const createPost = async (req, res) => {
       inheritsDefaults,
       settingsSnapshot,
       isPublished,
+      isPremiumContent: premiumAuthor && Boolean(req.body.isPremiumContent),
       visibility: resolvedVisibility,
       slug,
       wordCount,
@@ -1056,6 +1126,7 @@ export const updatePost = async (req, res) => {
       return res.status(403).json({ error: "Not authorized to edit this post" });
     }
 
+    const premiumAuthor = isPremiumUser(req.user);
     const wasPublished = Boolean(post.isPublished);
     const body = req.body || {};
     const updates = {};
@@ -1067,6 +1138,7 @@ export const updatePost = async (req, res) => {
       "coverImage",
       "coverImageMeta",
       "isPublished",
+      "isPremiumContent",
     ];
 
     Object.entries(body).forEach(([key, value]) => {
@@ -1079,8 +1151,26 @@ export const updatePost = async (req, res) => {
       updates.slug = await ensureUniqueSlug(updates.title, post._id);
     }
 
+    if (Object.prototype.hasOwnProperty.call(updates, "isPremiumContent")) {
+      if (premiumAuthor) {
+        updates.isPremiumContent = Boolean(updates.isPremiumContent);
+      } else {
+        delete updates.isPremiumContent;
+      }
+    }
+
     if (Object.prototype.hasOwnProperty.call(updates, "content")) {
       const normalizedContent = normalizeContentBlocks(updates.content);
+
+      if (!premiumAuthor) {
+        const imageCount = countImageBlocks(normalizedContent);
+        if (imageCount > FREE_USER_IMAGE_LIMIT) {
+          return res.status(403).json({
+            error: `Add up to ${FREE_USER_IMAGE_LIMIT} images per story on the free plan. Upgrade to BlogsHive Premium to add more visuals.`,
+          });
+        }
+      }
+
       updates.content = normalizedContent;
       const wordCount = countWords(normalizedContent);
       updates.wordCount = wordCount;
@@ -1098,6 +1188,18 @@ export const updatePost = async (req, res) => {
         : post.coverImage;
       const metaCandidate = hasCoverMetaUpdate ? updates.coverImageMeta : post.coverImageMeta;
       updates.coverImage = resolveCoverImageValue(coverCandidate, metaCandidate);
+    }
+
+    if (!premiumAuthor && Object.prototype.hasOwnProperty.call(updates, "isPublished")) {
+      const publishingNow = updates.isPublished === true && !post.isPublished;
+      if (publishingNow) {
+        const publishedCount = await Post.countDocuments({ author: req.user._id, isPublished: true });
+        if (publishedCount >= FREE_USER_POST_LIMIT) {
+          return res.status(403).json({
+            error: `Free members can publish up to ${FREE_USER_POST_LIMIT} stories. Upgrade to BlogsHive Premium for unlimited publishing.`,
+          });
+        }
+      }
     }
 
     if (typeof updates.isPublished === "boolean") {
@@ -1388,6 +1490,10 @@ export const listAuthorPosts = async (req, res) => {
       ...visibilityFilter,
     };
 
+    if (!(isSelf || isPremiumUser(req.user))) {
+      baseFilter.isPremiumContent = { $ne: true };
+    }
+
     const [posts, total] = await Promise.all([
       Post.find(baseFilter)
         .sort({ publishedAt: -1, createdAt: -1 })
@@ -1475,6 +1581,7 @@ export const searchPosts = async (req, res) => {
   try {
     const query = req.query.q?.trim();
     const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 10, 1), 50);
+    const viewerIsPremium = isPremiumUser(req.user);
 
     if (!query) {
       return res.json({ posts: [] });
@@ -1483,6 +1590,7 @@ export const searchPosts = async (req, res) => {
     const searchRegex = new RegExp(query, "i");
     const posts = await Post.find({
       isPublished: true,
+      ...(viewerIsPremium ? {} : { isPremiumContent: { $ne: true } }),
       $or: [
         { title: searchRegex },
         { subtitle: searchRegex },

@@ -13,6 +13,7 @@ import notificationsRoutes from './routes/notifications.js';
 import hiddenRoutes from './routes/hidden.js';
 import uploadsRoutes from './routes/uploads.js';
 import newsletterRoutes from './routes/newsletter.js';
+import billingRoutes from './routes/billing.js';
 
 const app = express();
 
@@ -55,6 +56,7 @@ app.use('/api/hidden-posts', hiddenRoutes);
 app.use('/api/notifications', notificationsRoutes);
 app.use('/api/uploads', uploadsRoutes);
 app.use('/api/newsletter', newsletterRoutes);
+app.use('/api/billing', billingRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {

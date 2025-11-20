@@ -36,6 +36,10 @@ const userSchema = new mongoose.Schema({
   hasSubdomain: { type: Boolean, default: false },
   customDomainState: { type: String },
   membershipStatus: { type: Boolean, default: false },
+  stripeCustomerId: { type: String },
+  stripeSubscriptionId: { type: String },
+  membershipStartedAt: { type: Date },
+  membershipCanceledAt: { type: Date },
   createdAt: { type: Date, default: Date.now },
   lastLogin: { type: Date },
     topics: {

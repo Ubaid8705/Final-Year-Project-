@@ -15,7 +15,9 @@ export const authenticate = async (req, res, next) => {
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     const user = await User.findById(decoded.userId)
-      .select("_id email username name avatar bio pronouns membershipStatus topics");
+      .select(
+        "_id email username name avatar bio pronouns membershipStatus topics stripeCustomerId stripeSubscriptionId"
+      );
 
     if (!user) {
       return res.status(401).json({ error: "Invalid token" });
