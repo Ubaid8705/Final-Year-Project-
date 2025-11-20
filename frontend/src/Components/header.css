@@ -35,19 +35,20 @@
   align-items: center;
   justify-content: center;
   gap: 1px;
-  padding: 6px;
+  padding: 6px 14px;
   border-radius: 9999px;
-  background: #e9fff8; /* adjust to your color */
-  border: 1px solid #7fdac6;
+  background: rgba(242, 242, 242, 0.6);
+  border: 1px solid rgba(0, 0, 0, 0.08);
   box-sizing: border-box;
   width: 100%;
-  max-width: 420px; /* don't let it grow beyond this */
-  overflow: visible;  /* allow dropdown to show */
+  max-width: 420px;
+  overflow: visible;
   max-height: 50px;
+  transition: background 0.2s ease, border-color 0.2s ease;
 }
 
 .search-bar input {
-  min-width: 0; /* crucial to prevent overflow of the input */
+  min-width: 0;
   max-width: 80%;
   margin-top: 4%;
   height: 36px;
@@ -56,7 +57,17 @@
   box-sizing: border-box;
   background: none;
   border: none;
+  color: #242424;
+  font-size: 0.95rem;
+}
 
+.search-bar input::placeholder {
+  color: rgba(117, 117, 117, 0.7);
+}
+
+.search-bar:focus-within {
+  background: rgba(242, 242, 242, 0.9);
+  border-color: rgba(26, 137, 23, 0.3);
 }
 
 .search-icon {
@@ -66,6 +77,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  color: rgba(117, 117, 117, 0.85);
+  font-size: 1.1rem;
 }
 
 .header-actions {

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import Post from "../Components/post";
 import { useAuth } from "../contexts/AuthContext";
 import { API_BASE_URL } from "../config";
@@ -176,6 +176,7 @@ const DRAFTS_PREVIEW_LIMIT = 5;
 const Profile = () => {
   const { user: authUser, token, updateUser: updateStoredUser } = useAuth();
   const { username: routeUsername } = useParams();
+  const navigate = useNavigate();
 
   const viewingOwnProfile = !routeUsername || routeUsername === authUser?.username;
   const profileUsername = viewingOwnProfile ? authUser?.username : routeUsername;
@@ -1583,9 +1584,7 @@ const Profile = () => {
           <div className="profile-links">
             <Link to="/about">About</Link>
             <Link to="/terms">Terms</Link>
-            <span>Blog</span>
-            <span>Privacy</span>
-            <span>Text to speech</span>
+            <span onClick={() => navigate("/write")} style={{ cursor: "pointer" }}>Blog</span>
           </div>
         </aside>
       </div>
