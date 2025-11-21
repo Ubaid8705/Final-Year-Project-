@@ -64,6 +64,15 @@ const EnhancedImage = Image.extend({
   },
 });
 
+const FREE_USER_POST_LIMIT = 5;
+const FREE_USER_IMAGE_LIMIT = 3;
+
+const getFreeImageLimitMessage = () =>
+  `Add up to ${FREE_USER_IMAGE_LIMIT} images per story on the free plan. Upgrade to BlogsHive Premium to add more visuals.`;
+
+const getFreePublishLimitMessage = () =>
+  `Free members can publish up to ${FREE_USER_POST_LIMIT} stories. Upgrade to BlogsHive Premium for unlimited publishing.`;
+
 const buildFallbackAvatar = (seed) =>
   `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(
     seed || "Writer"
@@ -469,6 +478,20 @@ const transformContentToDoc = (blocks = []) => {
   return { type: "doc", content: docContent };
 };
 
+const countImageBlocks = (blocks = []) =>
+  Array.isArray(blocks)
+    ? blocks.reduce((total, block) => {
+        if (!block || typeof block !== "object") {
+          return total;
+        }
+        const type = (block.type || "").toString().toUpperCase();
+        if (type === "IMG" && block.image) {
+          return total + 1;
+        }
+        return total;
+      }, 0)
+    : 0;
+
 const normalizeCoverAssetFromPost = (post = {}) => {
   const meta = post.coverImageMeta || {};
   const hasMeta = meta && Object.keys(meta).length > 0;
@@ -539,6 +562,7 @@ const Write = ({ postId, authorId }) => {
   const location = useLocation();
   const [searchParams] = useSearchParams();
   const { user, token } = useAuth();
+  const viewerIsPremium = Boolean(user?.membershipStatus);
 
   const routeState = location.state || {};
   const statePostId = routeState.postId || routeState.id || null;
@@ -562,6 +586,10 @@ const Write = ({ postId, authorId }) => {
   const [isInsertMenuOpen, setIsInsertMenuOpen] = useState(false);
   const [insertMode, setInsertMode] = useState(null); // 'image' | 'image-link' | 'video' | 'embed'
   const [urlInput, setUrlInput] = useState("");
+  const [imageLimitMessage, setImageLimitMessage] = useState(null);
+  const [imageCount, setImageCount] = useState(0);
+  const [publishedCount, setPublishedCount] = useState(null);
+  const [existingPublishState, setExistingPublishState] = useState(false);
   const [floatingMenuState, setFloatingMenuState] = useState({
     top: 0,
     left: 0,
@@ -577,6 +605,20 @@ const Write = ({ postId, authorId }) => {
   const [emailPromptVisible, setEmailPromptVisible] = useState(false);
   const [navigationPromptState, setNavigationPromptState] = useState(null);
   const [infoModal, setInfoModal] = useState(null);
+
+  const reachedImageLimit = !viewerIsPremium && imageCount >= FREE_USER_IMAGE_LIMIT;
+  const publishLimitMessage =
+    !viewerIsPremium &&
+    !existingPublishState &&
+    typeof publishedCount === "number" &&
+    publishedCount >= FREE_USER_POST_LIMIT
+      ? getFreePublishLimitMessage()
+      : null;
+  const publishLimitReached = Boolean(publishLimitMessage);
+  const displayedSaveError =
+    saveError && saveError !== imageLimitMessage && saveError !== publishLimitMessage
+      ? saveError
+      : null;
 
   const handleBlockedNavigation = useCallback(({ tx, unblock }) => {
     setNavigationPromptState({ tx, unblock });
@@ -626,6 +668,39 @@ const Write = ({ postId, authorId }) => {
     });
   }, []);
 
+  const fetchLatestPublishedCount = useCallback(async () => {
+    if (viewerIsPremium || !token || !user?.username) {
+      return null;
+    }
+
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/api/posts?author=${encodeURIComponent(
+          user.username
+        )}&status=published&limit=1`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to load publishing usage.");
+      }
+
+      const total = Number(data?.pagination?.total ?? 0);
+      const normalized = Number.isFinite(total) ? total : 0;
+      setPublishedCount(normalized);
+      return normalized;
+    } catch (error) {
+      console.error(error);
+      return null;
+    }
+  }, [viewerIsPremium, token, user?.username]);
+
   useEffect(() => {
     if (!autoSaveEnabled || !hasPendingChanges) {
       return undefined;
@@ -646,6 +721,15 @@ const Write = ({ postId, authorId }) => {
       setHasPendingChanges(false);
     }
   }, [autoSaveEnabled]);
+
+  useEffect(() => {
+    if (viewerIsPremium || !token || !user?.username) {
+      setPublishedCount(null);
+      return;
+    }
+
+    fetchLatestPublishedCount();
+  }, [viewerIsPremium, token, user?.username, fetchLatestPublishedCount]);
 
   const coverInputRef = useRef(null);
   const titleInputRef = useRef(null);
@@ -685,6 +769,15 @@ const Write = ({ postId, authorId }) => {
 
       const documentJson = editorInstance.getJSON();
       const contentBlocks = transformDocToContent(documentJson);
+      if (!viewerIsPremium) {
+        const imageBlockCount = countImageBlocks(contentBlocks);
+        if (imageBlockCount > FREE_USER_IMAGE_LIMIT) {
+          const message = getFreeImageLimitMessage();
+          setImageLimitMessage(message);
+          setSaveError(message);
+          return null;
+        }
+      }
       const plainText = editorInstance.getText();
       const wordCount = plainText
         ? plainText.trim().split(/\s+/).filter(Boolean).length
@@ -726,7 +819,17 @@ const Write = ({ postId, authorId }) => {
         ...overrides,
       };
     },
-  [title, subtitle, tags, coverAsset, distributionMode, sendEmailsPreference]
+  [
+    title,
+    subtitle,
+    tags,
+    coverAsset,
+    distributionMode,
+    sendEmailsPreference,
+    viewerIsPremium,
+    setSaveError,
+    setImageLimitMessage,
+  ]
   );
 
   const sendPostPayload = useCallback(
@@ -1138,6 +1241,47 @@ const Write = ({ postId, authorId }) => {
   }, [editor, applyCodeBlockLanguageAttributes]);
 
   useEffect(() => {
+    if (!editor) {
+      return undefined;
+    }
+
+    const computeImageUsage = () => {
+      try {
+        const doc = editor.getJSON();
+        const blocks = transformDocToContent(doc);
+        setImageCount(countImageBlocks(blocks));
+      } catch (error) {
+        // ignore image counting errors to avoid disrupting editing
+      }
+    };
+
+    computeImageUsage();
+    editor.on("update", computeImageUsage);
+    editor.on("selectionUpdate", computeImageUsage);
+
+    return () => {
+      editor.off("update", computeImageUsage);
+      editor.off("selectionUpdate", computeImageUsage);
+    };
+  }, [editor]);
+
+  useEffect(() => {
+    if (viewerIsPremium) {
+      setImageLimitMessage(null);
+      return;
+    }
+
+    if (imageCount > FREE_USER_IMAGE_LIMIT) {
+      setImageLimitMessage(getFreeImageLimitMessage());
+      return;
+    }
+
+    if (imageCount < FREE_USER_IMAGE_LIMIT) {
+      setImageLimitMessage(null);
+    }
+  }, [viewerIsPremium, imageCount]);
+
+  useEffect(() => {
     return () => {
       if (autoSaveTimer.current) {
         clearTimeout(autoSaveTimer.current);
@@ -1333,6 +1477,7 @@ const Write = ({ postId, authorId }) => {
       bootstrappingRef.current = false;
       setBootstrapLoading(false);
       setBootstrapError(null);
+      setExistingPublishState(false);
       return;
     }
 
@@ -1373,6 +1518,7 @@ const Write = ({ postId, authorId }) => {
           id: data.id || data._id || initialPostIdentifier,
           slug: data.slug || statePostSlug || null,
         });
+        setExistingPublishState(Boolean(data.isPublished));
 
         setCoverAsset(normalizeCoverAssetFromPost(data));
         setCoverUploadState({ loading: false, error: null });
@@ -1410,6 +1556,7 @@ const Write = ({ postId, authorId }) => {
           return;
         }
         setBootstrapError(error.message || "Failed to load story.");
+        setExistingPublishState(false);
       } finally {
         if (!cancelled) {
           bootstrappingRef.current = false;
@@ -1557,6 +1704,19 @@ const Write = ({ postId, authorId }) => {
     pendingSaveRef.current = false;
     await waitForActiveSave();
 
+    if (!viewerIsPremium && !existingPublishState) {
+      let latestCount = typeof publishedCount === "number" ? publishedCount : null;
+      if (latestCount === null) {
+        latestCount = await fetchLatestPublishedCount();
+      }
+
+      if ((latestCount ?? 0) >= FREE_USER_POST_LIMIT) {
+        const message = getFreePublishLimitMessage();
+        setSaveError(message);
+        return;
+      }
+    }
+
     const resolvedDistributionMode = (distributionMode || (sendEmailsPreference ? "AUTO_EMAIL" : "PROMPT"))
       .toString()
       .trim()
@@ -1584,6 +1744,10 @@ const Write = ({ postId, authorId }) => {
     publishStory,
     distributionMode,
     sendEmailsPreference,
+    viewerIsPremium,
+    existingPublishState,
+    publishedCount,
+    fetchLatestPublishedCount,
   ]);
 
   const handleEmailPromptDecision = useCallback(
@@ -1638,6 +1802,26 @@ const Write = ({ postId, authorId }) => {
         return;
       }
 
+      if (!viewerIsPremium) {
+        try {
+          const editorInstance = editorRef.current || editor;
+          const docJson = editorInstance?.getJSON?.() || null;
+          const contentBlocks = transformDocToContent(docJson);
+          const currentImageCount = countImageBlocks(contentBlocks);
+          if (currentImageCount >= FREE_USER_IMAGE_LIMIT) {
+            const message = getFreeImageLimitMessage();
+            setImageLimitMessage(message);
+            setInlineUploadState({ loading: false, error: message });
+            setInsertMode(null);
+            setUrlInput("");
+            setIsInsertMenuOpen(false);
+            return;
+          }
+        } catch (error) {
+          console.error(error);
+        }
+      }
+
       const widthCandidate = Number(asset.width);
       const heightCandidate = Number(asset.height);
       const width = Number.isFinite(widthCandidate) && widthCandidate > 0 ? widthCandidate : null;
@@ -1671,7 +1855,16 @@ const Write = ({ postId, authorId }) => {
       setIsInsertMenuOpen(false);
       scheduleAutoSave();
     },
-    [editor, scheduleAutoSave]
+    [
+      editor,
+      scheduleAutoSave,
+      viewerIsPremium,
+      setInlineUploadState,
+      setImageLimitMessage,
+      setInsertMode,
+      setUrlInput,
+      setIsInsertMenuOpen,
+    ]
   );
 
   const insertImage = useCallback(() => {
@@ -1697,6 +1890,14 @@ const Write = ({ postId, authorId }) => {
         return;
       }
 
+      if (!viewerIsPremium && imageCount >= FREE_USER_IMAGE_LIMIT) {
+        const message = getFreeImageLimitMessage();
+        setInlineUploadState({ loading: false, error: message });
+        setImageLimitMessage(message);
+        event.target.value = "";
+        return;
+      }
+
       setInlineUploadState({ loading: true, error: null });
 
       try {
@@ -1713,12 +1914,26 @@ const Write = ({ postId, authorId }) => {
         event.target.value = "";
       }
     },
-    [insertImageAsset, token]
+    [
+      insertImageAsset,
+      token,
+      viewerIsPremium,
+      imageCount,
+      setInlineUploadState,
+      setImageLimitMessage,
+    ]
   );
 
   const handleImageUrlSubmit = useCallback(async () => {
     const url = urlInput.trim();
     if (!url) {
+      return;
+    }
+
+    if (!viewerIsPremium && imageCount >= FREE_USER_IMAGE_LIMIT) {
+      const message = getFreeImageLimitMessage();
+      setInlineUploadState({ loading: false, error: message });
+      setImageLimitMessage(message);
       return;
     }
 
@@ -1736,7 +1951,7 @@ const Write = ({ postId, authorId }) => {
         error: "Unable to insert image from that URL.",
       });
     }
-  }, [insertImageAsset, urlInput]);
+  }, [insertImageAsset, urlInput, viewerIsPremium, imageCount, setInlineUploadState, setImageLimitMessage]);
 
   const insertVideo = useCallback(() => {
     setInsertMode("video");
@@ -2018,9 +2233,43 @@ const Write = ({ postId, authorId }) => {
                 {bootstrapError}
               </span>
             )}
-            {saveError && (
+            {displayedSaveError && (
               <span className="write-header__state-message" role="alert">
-                {saveError}
+                {displayedSaveError}
+              </span>
+            )}
+            {!viewerIsPremium && publishLimitMessage && (
+              <span
+                className="write-header__state-message write-header__state-message--notice"
+                role="status"
+              >
+                {publishLimitMessage}
+                {" "}
+                <a
+                  className="write-header__upgrade"
+                  href="/plans"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Upgrade
+                </a>
+              </span>
+            )}
+            {!viewerIsPremium && imageLimitMessage && (
+              <span
+                className="write-header__state-message write-header__state-message--notice"
+                role="status"
+              >
+                {imageLimitMessage}
+                {" "}
+                <a
+                  className="write-header__upgrade"
+                  href="/plans"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Upgrade
+                </a>
               </span>
             )}
           </div>
@@ -2037,7 +2286,7 @@ const Write = ({ postId, authorId }) => {
             type="button"
             className="write-header__btn write-header__btn--primary"
             onClick={handlePublish}
-            disabled={isPublishing || bootstrapLoading}
+            disabled={isPublishing || bootstrapLoading || publishLimitReached}
           >
             {isPublishing ? "Publishing…" : "Publish"}
           </button>
@@ -2191,6 +2440,7 @@ const Write = ({ postId, authorId }) => {
                           className="write-plus__url-confirm"
                           onMouseDown={(event) => event.preventDefault()}
                           onClick={handleImageUrlSubmit}
+                          disabled={reachedImageLimit}
                         >
                           Add
                         </button>
@@ -2321,7 +2571,7 @@ const Write = ({ postId, authorId }) => {
                           onMouseDown={(event) => event.preventDefault()}
                           onClick={handleInlineUploadClick}
                           aria-label="Upload image"
-                          disabled={inlineUploadState.loading}
+                          disabled={inlineUploadState.loading || reachedImageLimit}
                         >
                           {inlineUploadState.loading ? "Uploading…" : "Upload image"}
                         </button>
@@ -2334,6 +2584,7 @@ const Write = ({ postId, authorId }) => {
                             setInsertMode("image-link");
                           }}
                           aria-label="Paste image URL"
+                          disabled={reachedImageLimit}
                         >
                           Paste image URL
                         </button>
@@ -2354,6 +2605,7 @@ const Write = ({ postId, authorId }) => {
                           onMouseDown={(event) => event.preventDefault()}
                           onClick={insertImage}
                           aria-label="Insert image"
+                          disabled={reachedImageLimit}
                         >
                           Img
                         </button>

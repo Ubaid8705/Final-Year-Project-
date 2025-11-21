@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useLocation } from "react-router-dom";
 import "./postview.css";
 import { API_BASE_URL } from "../config";
 import { useAuth } from "../contexts/AuthContext";
@@ -634,6 +634,7 @@ export default function PostView() {
 	const { id } = useParams();
 	const navigate = useNavigate();
 	const { token, user } = useAuth();
+	const location = useLocation();
 
 	const [post, setPost] = useState(null);
 	const [loading, setLoading] = useState(true);
@@ -652,6 +653,8 @@ export default function PostView() {
 	const [replyError, setReplyError] = useState(null);
 	const [replySubmitting, setReplySubmitting] = useState(false);
 	const [deletingPost, setDeletingPost] = useState(false);
+	const [accessDenied, setAccessDenied] = useState(false);
+	const [accessMessage, setAccessMessage] = useState(null);
 
 	const codeLowlight = useMemo(() => createCodeLowlight(), []);
 
@@ -723,6 +726,7 @@ export default function PostView() {
 	);
 
 	const isAuthenticated = Boolean(token && user);
+	const viewerIsPremium = Boolean(user?.membershipStatus);
 	const currentUserId = useMemo(() => {
 		const candidate = user?._id || user?.id || null;
 		if (!candidate) {
@@ -785,14 +789,36 @@ export default function PostView() {
 
 		setLoading(true);
 		setError(null);
+		setAccessDenied(false);
+		setAccessMessage(null);
 
 		try {
-			const response = await fetch(`${API_BASE_URL}/api/posts/${id}`);
+			const requestOptions = token
+				? {
+					headers: {
+						Authorization: `Bearer ${token}`,
+					},
+				}
+				: {};
+
+			const response = await fetch(`${API_BASE_URL}/api/posts/${id}`, requestOptions);
+			const payload = await response.json().catch(() => ({}));
+
 			if (!response.ok) {
-				throw new Error("Unable to load story");
+				if (response.status === 401 || response.status === 403) {
+					setAccessDenied(true);
+					setAccessMessage(
+						payload?.error ||
+						(response.status === 401
+							? "Please sign in to continue."
+							: "Upgrade to BlogsHive Premium to unlock this story.")
+					);
+					setPost(null);
+					return;
+				}
+				throw new Error(payload?.error || "Unable to load story");
 			}
 
-			const payload = await response.json();
 			setPost(payload);
 			setClapCount(payload?.clapCount ?? 0);
 		} catch (fetchError) {
@@ -800,7 +826,7 @@ export default function PostView() {
 		} finally {
 			setLoading(false);
 		}
-	}, [id]);
+	}, [id, token]);
 
 	const fetchComments = useCallback(async () => {
 		if (!postId) {
@@ -832,8 +858,10 @@ export default function PostView() {
 	}, [fetchPost]);
 
 	useEffect(() => {
-		fetchComments();
-	}, [fetchComments]);
+		if (!accessDenied) {
+			fetchComments();
+		}
+	}, [accessDenied, fetchComments]);
 
 	const handleClap = useCallback(async () => {
 		if (!isAuthenticated || !token) {
@@ -1165,6 +1193,46 @@ export default function PostView() {
 		return <div className="post-loading">Loading story…</div>;
 	}
 
+	if (accessDenied) {
+		return (
+			<div className="post-locked-view">
+				<h1>Premium story</h1>
+				<p>{accessMessage || "Upgrade to BlogsHive Premium to keep reading."}</p>
+				<div className="post-locked-actions">
+					<button
+						type="button"
+						className="post-locked-btn post-locked-btn--primary"
+						onClick={() =>
+							navigate("/plans", {
+								state: { from: location.pathname },
+							})
+						}
+					>
+						View premium plans
+					</button>
+					{!isAuthenticated && (
+						<button
+							type="button"
+							className="post-locked-btn"
+							onClick={() =>
+								navigate("/login", {
+									state: { from: location.pathname },
+								})
+							}
+						>
+							Sign in
+						</button>
+					)}
+				</div>
+				{!viewerIsPremium && (
+					<p className="post-locked-footnote">
+						Premium members can publish without limits, add unlimited visuals, and unlock every member-only story.
+					</p>
+				)}
+			</div>
+		);
+	}
+
 	if (error && !post) {
 		return <div className="post-error">{error}</div>;
 	}
@@ -1173,11 +1241,21 @@ export default function PostView() {
 		return <div className="post-error">Story not found</div>;
 	}
 
+	const isPremiumContent = Boolean(post?.isPremiumContent);
+
 	return (
 		<article className="post-container">
 			{error && <div className="post-inline-error">{error}</div>}
 
 			<header className="post-header">
+				{isPremiumContent && (
+					<div
+						className={`post-premium-banner${viewerIsPremium ? " post-premium-banner--active" : ""}`}
+					>
+						<span aria-hidden="true">{viewerIsPremium ? "⭐" : "🔒"}</span>
+						{viewerIsPremium ? "You unlocked this BlogsHive Premium story." : "BlogsHive Premium story"}
+					</div>
+				)}
 				<h1 className="post-title">{post.title}</h1>
 				{post.subtitle && <h2 className="post-subtitle">{post.subtitle}</h2>}
 

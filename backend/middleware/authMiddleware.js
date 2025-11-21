@@ -48,7 +48,7 @@ export const optionalAuthenticate = async (req, res, next) => {
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     const user = await User.findById(decoded.userId).select(
-      "_id email username name avatar topics"
+      "_id email username name avatar topics membershipStatus stripeCustomerId stripeSubscriptionId"
     );
 
     if (user) {
