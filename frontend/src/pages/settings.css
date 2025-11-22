@@ -91,9 +91,9 @@
 
 .settings-nav__item {
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
   padding: 10px 18px;
   border-radius: 999px;
   border: none;
@@ -127,8 +127,14 @@
   justify-content: center;
   border-radius: 50%;
   background: rgba(15, 23, 42, 0.08);
-  margin-bottom: 4px;
   font-size: 1.1rem;
+}
+
+.settings-nav__item > div {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
 }
 .settings-nav__hint {
   font-size: 0.72rem;
