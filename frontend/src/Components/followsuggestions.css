@@ -77,6 +77,20 @@
   transition: background 0.2s, color 0.2s;
 }
 
+.follow-item__body {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+}
+
+.follow-actions {
+  flex-shrink: 0;
+  display: flex;
+  justify-content: flex-end;
+}
+
 .follow-btn:hover {
   background: #222;
   color: #fff;
@@ -116,6 +130,27 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+@media (max-width: 540px) {
+  .follow-item {
+    align-items: stretch;
+  }
+
+  .follow-item__body {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .follow-actions {
+    width: 100%;
+  }
+
+  .follow-btn {
+    width: 100%;
+    justify-content: center;
+    text-align: center;
+  }
 }
 
 .follow-retry {

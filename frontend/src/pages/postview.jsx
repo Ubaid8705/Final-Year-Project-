@@ -655,6 +655,7 @@ export default function PostView() {
 	const [deletingPost, setDeletingPost] = useState(false);
 	const [accessDenied, setAccessDenied] = useState(false);
 	const [accessMessage, setAccessMessage] = useState(null);
+	const [lockedPreview, setLockedPreview] = useState(null);
 
 	const codeLowlight = useMemo(() => createCodeLowlight(), []);
 
@@ -791,6 +792,7 @@ export default function PostView() {
 		setError(null);
 		setAccessDenied(false);
 		setAccessMessage(null);
+		setLockedPreview(null);
 
 		try {
 			const requestOptions = token
@@ -813,6 +815,7 @@ export default function PostView() {
 							? "Please sign in to continue."
 							: "Upgrade to BlogsHive Premium to unlock this story.")
 					);
+					setLockedPreview(payload?.preview || null);
 					setPost(null);
 					return;
 				}
@@ -821,6 +824,7 @@ export default function PostView() {
 
 			setPost(payload);
 			setClapCount(payload?.clapCount ?? 0);
+			setLockedPreview(null);
 		} catch (fetchError) {
 			setError(fetchError.message || "Failed to load story");
 		} finally {
@@ -1194,41 +1198,123 @@ export default function PostView() {
 	}
 
 	if (accessDenied) {
+		const previewTitle = (lockedPreview?.title || "").trim() || "BlogsHive Premium story";
+		const previewSubtitle = (lockedPreview?.subtitle || "").trim();
+		const previewAuthor = lockedPreview?.author || null;
+		const authorName = (previewAuthor?.name || previewAuthor?.username || "").trim();
+		const authorAvatar = previewAuthor?.avatar || FALLBACK_AVATAR;
+		const readingTimeLabel = typeof lockedPreview?.readingTime === "number" && lockedPreview.readingTime > 0
+			? `${lockedPreview.readingTime} min read`
+			: null;
+		const publishedLabel = lockedPreview?.publishedAt ? formatDate(lockedPreview.publishedAt) : null;
+		const authorMeta = [publishedLabel, readingTimeLabel].filter(Boolean).join(" • ");
+		const previewCover =
+			lockedPreview?.coverImage ||
+			lockedPreview?.coverImageMeta?.displayUrl ||
+			lockedPreview?.coverImageMeta?.secureUrl ||
+			lockedPreview?.coverImageMeta?.originalUrl ||
+			null;
+		const previewParagraphs = Array.isArray(lockedPreview?.paragraphs)
+			? lockedPreview.paragraphs.filter((text) => typeof text === "string" && text.trim())
+			: [];
+		if (previewParagraphs.length === 0 && typeof lockedPreview?.teaser === "string" && lockedPreview.teaser.trim()) {
+			previewParagraphs.push(lockedPreview.teaser.trim());
+		}
+		const limitedPreview = previewParagraphs.slice(0, 3);
+		const previewTags = Array.isArray(lockedPreview?.tags) ? lockedPreview.tags.slice(0, 5) : [];
+
 		return (
 			<div className="post-locked-view">
-				<h1>Premium story</h1>
-				<p>{accessMessage || "Upgrade to BlogsHive Premium to keep reading."}</p>
-				<div className="post-locked-actions">
-					<button
-						type="button"
-						className="post-locked-btn post-locked-btn--primary"
-						onClick={() =>
-							navigate("/plans", {
-								state: { from: location.pathname },
-							})
-						}
-					>
-						View premium plans
-					</button>
-					{!isAuthenticated && (
-						<button
-							type="button"
-							className="post-locked-btn"
-							onClick={() =>
-								navigate("/login", {
-									state: { from: location.pathname },
-								})
-							}
-						>
-							Sign in
-						</button>
+				<section className={`post-locked-hero${previewCover ? " has-cover" : ""}`}>
+					{previewCover && (
+						<div
+							className="post-locked-hero-media"
+							style={{ backgroundImage: `url(${previewCover})` }}
+							role="img"
+							aria-label={previewTitle}
+						/>
 					)}
-				</div>
-				{!viewerIsPremium && (
-					<p className="post-locked-footnote">
-						Premium members can publish without limits, add unlimited visuals, and unlock every member-only story.
-					</p>
-				)}
+					<div className="post-locked-hero-overlay">
+						<span className="post-locked-chip">
+							<span aria-hidden="true">🔒</span> Member-only story
+						</span>
+						<h1>{previewTitle}</h1>
+						{previewSubtitle && <p className="post-locked-subtitle">{previewSubtitle}</p>}
+						{(authorName || authorMeta) && (
+							<div className="post-locked-author">
+								<img src={authorAvatar} alt={authorName || "Author avatar"} />
+								<div>
+									{authorName && <span className="post-locked-author-name">{authorName}</span>}
+									{authorMeta && <span className="post-locked-author-meta">{authorMeta}</span>}
+								</div>
+							</div>
+						)}
+						{previewTags.length > 0 && (
+							<div className="post-locked-tags">
+								{previewTags.map((tag) => (
+									<span key={tag} className="post-locked-tag">
+										#{tag}
+									</span>
+								))}
+							</div>
+						)}
+					</div>
+				</section>
+
+				<section className="post-locked-preview">
+					<div className="post-locked-preview-content">
+						{limitedPreview.length > 0 ? (
+							limitedPreview.map((text, index) => <p key={index}>{text}</p>)
+						) : (
+							<p>
+								Discover member-only perspectives, in-depth guides, and expert takes from the BlogsHive community.
+							</p>
+						)}
+					</div>
+					<div className="post-locked-blur" aria-hidden="true" />
+					<div className="post-locked-cta">
+						<div className="post-locked-icon" aria-hidden="true">
+							🔒
+						</div>
+						<h2>Keep reading with BlogsHive Premium</h2>
+						<p>{accessMessage || "Upgrade to BlogsHive Premium to unlock this story."}</p>
+						<div className="post-locked-actions">
+							<button
+								type="button"
+								className="post-locked-btn post-locked-btn--primary"
+								onClick={() =>
+									navigate("/plans", {
+										state: { from: location.pathname },
+									})
+								}
+							>
+								Unlock with Premium
+							</button>
+							{!isAuthenticated && (
+								<button
+									type="button"
+									className="post-locked-btn"
+									onClick={() =>
+										navigate("/login", {
+											state: { from: location.pathname },
+										})
+									}
+								>
+									Sign in
+								</button>
+							)}
+						</div>
+						<ul className="post-locked-benefits">
+							<li>Unlimited access to member-only stories</li>
+							<li>Support the writers you love directly</li>
+							<li>Publish without limits and add unlimited visuals</li>
+						</ul>
+					</div>
+				</section>
+
+				<p className="post-locked-footnote">
+					Already a member? Sign in with the email linked to your Premium subscription.
+				</p>
 			</div>
 		);
 	}

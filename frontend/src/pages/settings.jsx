@@ -584,13 +584,10 @@ export default function Settings() {
         label: "Membership",
         value: membershipLabel,
         supporting: settingsState.isPremium
-          ? "Thank you for supporting writers with a premium plan."
-          : "Upgrade to premium to unlock deeper analytics and themes.",
-        field: "membership",
-        options: MENU_OPTIONS.membership,
-        currentValue: settingsState.membership,
+          ? "Premium benefits are active on your account."
+          : "Visit the Plans page to upgrade and unlock premium perks.",
         accent: settingsState.isPremium,
-    badge: settingsState.isPremium ? PREMIUM_BADGE : null,
+        badge: settingsState.isPremium ? PREMIUM_BADGE : null,
       },
       {
         id: "digestFrequency",

@@ -449,6 +449,82 @@ const derivePostPreview = (postDoc) => {
   return preview || "";
 };
 
+const extractPreviewParagraphs = (content = [], maxParagraphs = 3) => {
+  if (!Array.isArray(content) || content.length === 0) {
+    return [];
+  }
+
+  const paragraphs = [];
+  for (const block of content) {
+    if (!block || typeof block !== "object") {
+      continue;
+    }
+
+    const type = (block.type || "").toString().toUpperCase();
+    if (type === "P" || type === "BQ" || type === "H2" || type === "H3") {
+      const text = (block.text || "").toString().trim();
+      if (text) {
+        paragraphs.push(text);
+      }
+    }
+
+    if (paragraphs.length >= maxParagraphs) {
+      break;
+    }
+  }
+
+  return paragraphs;
+};
+
+const buildPremiumPreviewPayload = (postDoc) => {
+  if (!postDoc) {
+    return null;
+  }
+
+  const post =
+    typeof postDoc.toObject === "function"
+      ? postDoc.toObject({ virtuals: true })
+      : postDoc;
+
+  if (!post) {
+    return null;
+  }
+
+  const paragraphs = extractPreviewParagraphs(post.content, 3);
+  const resolvedCover =
+    post.coverImage ||
+    post.coverImageMeta?.displayUrl ||
+    post.coverImageMeta?.secureUrl ||
+    post.coverImageMeta?.originalUrl ||
+    null;
+
+  const author = post.author || {};
+
+  return {
+    title: post.title || "",
+    subtitle: post.subtitle || "",
+    teaser: derivePostPreview(post),
+    paragraphs,
+    readingTime: post.readingTime || null,
+    publishedAt: post.publishedAt || post.createdAt || null,
+    tags: Array.isArray(post.tags) ? post.tags.slice(0, 5) : [],
+    coverImage: resolvedCover,
+    coverImageMeta: post.coverImageMeta || null,
+    author: author
+      ? {
+          id:
+            (typeof author._id !== "undefined" && author._id !== null
+              ? author._id
+              : author.id) || null,
+          name: author.name || "",
+          username: author.username || "",
+          avatar: author.avatar || null,
+          bio: author.bio || "",
+        }
+      : null,
+  };
+};
+
 const collectFollowerEmails = async (authorId) => {
   if (!authorId) {
     return [];
@@ -994,7 +1070,10 @@ export const getPost = async (req, res) => {
       post.author._id.toString() === req.user._id.toString();
 
     if (post.isPremiumContent && !viewerIsPremium && !viewerOwnsPost) {
-      return res.status(403).json({ error: "Upgrade to BlogsHive Premium to unlock this story." });
+      return res.status(403).json({
+        error: "Upgrade to BlogsHive Premium to unlock this story.",
+        preview: buildPremiumPreviewPayload(post),
+      });
     }
 
     res.json(hydratePost(post));

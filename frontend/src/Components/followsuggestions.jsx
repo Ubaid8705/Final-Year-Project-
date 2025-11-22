@@ -58,30 +58,37 @@ const FollowSuggestions = ({ loading, suggestions, onRetry, onFollowToggle, pend
                 <Link to={profileLink} className="follow-avatar-link">
                   <img src={avatar} alt={displayName} className="follow-avatar" />
                 </Link>
-                <div className="follow-details">
-                  <Link to={profileLink} className="follow-name">
-                    {displayName}
-                  </Link>
-                  {sharedTopicsLabel && (
-                    <div className="follow-info" title={`Shared interests: ${sharedTopics.join(', ')}`}>
-                      {sharedTopicsLabel}
-                    </div>
-                  )}
-                  {entry.stats?.followers != null && (
-                    <div className="follow-desc">
-                      {entry.stats.followers.toLocaleString()} followers
-                    </div>
-                  )}
+                <div className="follow-item__body">
+                  <div className="follow-details">
+                    <Link to={profileLink} className="follow-name">
+                      {displayName}
+                    </Link>
+                    {sharedTopicsLabel && (
+                      <div
+                        className="follow-info"
+                        title={`Shared interests: ${sharedTopics.join(', ')}`}
+                      >
+                        {sharedTopicsLabel}
+                      </div>
+                    )}
+                    {entry.stats?.followers != null && (
+                      <div className="follow-desc">
+                        {entry.stats.followers.toLocaleString()} followers
+                      </div>
+                    )}
+                  </div>
+                  <div className="follow-actions">
+                    <button
+                      className={buttonClassNames}
+                      type="button"
+                      disabled={buttonDisabled}
+                      onClick={handleFollowClick}
+                      aria-busy={isPending ? 'true' : undefined}
+                    >
+                      {buttonLabel}
+                    </button>
+                  </div>
                 </div>
-                <button
-                  className={buttonClassNames}
-                  type="button"
-                  disabled={buttonDisabled}
-                  onClick={handleFollowClick}
-                  aria-busy={isPending ? 'true' : undefined}
-                >
-                  {buttonLabel}
-                </button>
               </li>
             );
           })}
