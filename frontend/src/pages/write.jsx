@@ -12,7 +12,7 @@ import {
   useSearchParams,
   UNSAFE_NavigationContext,
 } from "react-router-dom";
-import { EditorContent, useEditor } from "@tiptap/react";
+import { EditorContent, useEditor, ReactNodeViewRenderer, NodeViewWrapper } from "@tiptap/react";
 import { BubbleMenu } from "@tiptap/react/menus";
 import StarterKit from "@tiptap/starter-kit";
 import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
@@ -47,6 +47,37 @@ const LinkIcon = (props) => (
   </svg>
 );
 
+const ImageWithDelete = ({ node, deleteNode, editor }) => {
+  const [isHovered, setIsHovered] = React.useState(false);
+
+  return (
+    <NodeViewWrapper className="image-node-wrapper">
+      <div
+        className="image-container"
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
+      >
+        <img
+          src={node.attrs.src}
+          alt={node.attrs.alt || ""}
+          title={node.attrs.title || ""}
+        />
+        {isHovered && (
+          <button
+            type="button"
+            className="image-delete-btn"
+            onClick={deleteNode}
+            aria-label="Remove image"
+            onMouseDown={(e) => e.preventDefault()}
+          >
+            ×
+          </button>
+        )}
+      </div>
+    </NodeViewWrapper>
+  );
+};
+
 const EnhancedImage = Image.extend({
   addAttributes() {
     const parentAttributes = (typeof this.parent === "function" && this.parent()) || {};
@@ -61,6 +92,10 @@ const EnhancedImage = Image.extend({
       placeholderUrl: { default: null },
       aspectRatio: { default: null },
     };
+  },
+
+  addNodeView() {
+    return ReactNodeViewRenderer(ImageWithDelete);
   },
 });
 
@@ -868,33 +903,44 @@ const Write = ({ postId, authorId }) => {
       }));
 
       if (Object.prototype.hasOwnProperty.call(data, "coverImageMeta")) {
-        if (data.coverImageMeta) {
+        if (data.coverImageMeta && typeof data.coverImageMeta === 'object' && 
+            (data.coverImageMeta.displayUrl || data.coverImage)) {
           setCoverAsset((previous) => {
             const displayUrl =
               data.coverImageMeta.displayUrl ||
               data.coverImage ||
-              previous?.displayUrl ||
               data.coverImageMeta.originalUrl ||
-              previous?.originalUrl ||
               null;
 
+            if (!displayUrl) {
+              return null;
+            }
+
             return {
-              ...previous,
               ...data.coverImageMeta,
               displayUrl,
               originalUrl:
                 data.coverImageMeta.originalUrl ||
-                previous?.originalUrl ||
                 data.coverImage ||
                 displayUrl ||
                 null,
               secureUrl:
                 data.coverImage ||
                 data.coverImageMeta.secureUrl ||
-                previous?.secureUrl ||
                 displayUrl ||
                 null,
             };
+          });
+        } else {
+          setCoverAsset(null);
+        }
+      } else if (Object.prototype.hasOwnProperty.call(data, "coverImage")) {
+        // Only coverImage field present (no coverImageMeta field in response)
+        if (data.coverImage) {
+          setCoverAsset({
+            displayUrl: data.coverImage,
+            originalUrl: data.coverImage,
+            secureUrl: data.coverImage,
           });
         } else {
           setCoverAsset(null);
@@ -1656,13 +1702,18 @@ const Write = ({ postId, authorId }) => {
 
   const handleCoverSelect = async (event) => {
     const file = event.target.files?.[0];
+    
+    // Reset input immediately to allow re-selecting same file
+    if (event.target) {
+      event.target.value = "";
+    }
+    
     if (!file) {
       return;
     }
 
     if (!token) {
       setCoverUploadState({ loading: false, error: "Sign in to upload images." });
-      event.target.value = "";
       return;
     }
 
@@ -1679,21 +1730,40 @@ const Write = ({ postId, authorId }) => {
         loading: false,
         error: error.message || "Failed to upload cover image.",
       });
-    } finally {
-      // reset the input so the same file can be selected again if needed
-      event.target.value = "";
     }
   };
 
   const handleCoverRemove = () => {
+    console.log('[DEBUG] handleCoverRemove called');
     setCoverAsset(null);
+    setCoverUploadState({ loading: false, error: null });
+    if (coverInputRef.current) {
+      coverInputRef.current.value = "";
+    }
     scheduleAutoSave();
+  };
+  
+  const handleCoverReplaceClick = () => {
+    console.log('[DEBUG] handleCoverReplaceClick called');
+    setCoverUploadState({ loading: false, error: null });
+    if (coverInputRef.current) {
+      coverInputRef.current.value = "";
+      coverInputRef.current.click();
+    }
   };
 
   const handlePublish = useCallback(async () => {
     if (!token) {
       setSaveError("Sign in to publish your story.");
       return;
+    }
+
+    if (editor && !editor.isDestroyed) {
+      try {
+        editor.commands.blur();
+      } catch (err) {
+        console.warn("Failed to blur editor:", err);
+      }
     }
 
     if (autoSaveTimer.current) {
@@ -1740,6 +1810,7 @@ const Write = ({ postId, authorId }) => {
     });
   }, [
     token,
+    editor,
     waitForActiveSave,
     publishStory,
     distributionMode,
@@ -2102,35 +2173,40 @@ const Write = ({ postId, authorId }) => {
   ]);
 
   const bubbleMenuShouldShow = useCallback(({ editor: activeEditor, view }) => {
-    if (!activeEditor || activeEditor.isDestroyed) {
+    try {
+      if (!activeEditor || activeEditor.isDestroyed) {
+        return false;
+      }
+
+      const editorView = view || activeEditor.view;
+      if (!editorView || !editorView.dom) {
+        return false;
+      }
+
+      if (!editorView.docView || typeof editorView.docView.domFromPos !== "function") {
+        return false;
+      }
+
+      const { state } = activeEditor;
+      if (!state || !state.selection) {
+        return false;
+      }
+
+      const { from, to } = state.selection;
+      if (from === to) {
+        return false;
+      }
+
+      const docSize = state.doc?.content?.size ?? 0;
+      if (docSize <= 0 || from < 0 || to < 0 || from > docSize || to > docSize) {
+        return false;
+      }
+
+      return typeof editorView.hasFocus === "function" ? editorView.hasFocus() : true;
+    } catch (error) {
+      console.warn("BubbleMenu visibility check failed:", error);
       return false;
     }
-
-    const editorView = view || activeEditor.view;
-    if (!editorView || !editorView.dom) {
-      return false;
-    }
-
-    if (!editorView.docView || typeof editorView.docView.domFromPos !== "function") {
-      return false;
-    }
-
-    const { state } = activeEditor;
-    if (!state || !state.selection) {
-      return false;
-    }
-
-    const { from, to } = state.selection;
-    if (from === to) {
-      return false;
-    }
-
-    const docSize = state.doc?.content?.size ?? 0;
-    if (docSize <= 0 || from < 0 || to < 0 || from > docSize || to > docSize) {
-      return false;
-    }
-
-    return typeof editorView.hasFocus === "function" ? editorView.hasFocus() : true;
   }, []);
 
   return (
@@ -2327,7 +2403,7 @@ const Write = ({ postId, authorId }) => {
                 <div className="write-cover__actions">
                   <button
                     type="button"
-                    onClick={() => coverInputRef.current?.click()}
+                    onClick={handleCoverReplaceClick}
                     disabled={coverUploadState.loading}
                   >
                     Replace
@@ -2663,13 +2739,20 @@ const Write = ({ postId, authorId }) => {
               aria-hidden="true"
             />
 
-            {editor && !editor.isDestroyed && editor.view && editor.view.docView &&
+            {editor && !editor.isDestroyed && !isPublishing && editor.view && editor.view.docView &&
               typeof editor.view.docView.domFromPos === "function" &&
               bubbleMenuItems.length > 0 && (
               <BubbleMenu
+                key={`bubble-${editor.view.state.doc.content.size}`}
                 editor={editor}
                 shouldShow={bubbleMenuShouldShow}
-                tippyOptions={{ duration: 120 }}
+                tippyOptions={{ 
+                  duration: 120,
+                  onShow: () => {
+                    if (!editor || editor.isDestroyed) return false;
+                    return true;
+                  }
+                }}
               >
                 <div className="write-bubble">
                   {bubbleMenuItems.map((item) => {

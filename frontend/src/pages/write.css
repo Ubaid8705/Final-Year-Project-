@@ -994,6 +994,70 @@
     font-style: italic;
 }
 
+.write-editor__content .ProseMirror img {
+    max-width: 100%;
+    height: auto;
+    display: block;
+    margin: 24px auto;
+    border-radius: 16px;
+    box-shadow: 0 24px 48px -32px rgba(17, 17, 17, 0.35);
+}
+
+.write-editor__content .ProseMirror figure {
+    margin: 0;
+}
+
+.image-node-wrapper {
+    position: relative;
+    margin: 24px 0;
+}
+
+.image-container {
+    position: relative;
+    display: inline-block;
+    width: 100%;
+}
+
+.image-container img {
+    max-width: 100%;
+    height: auto;
+    display: block;
+    margin: 0 auto;
+    border-radius: 16px;
+    box-shadow: 0 24px 48px -32px rgba(17, 17, 17, 0.35);
+}
+
+.image-delete-btn {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    width: 32px;
+    height: 32px;
+    border: none;
+    border-radius: 50%;
+    background: rgba(239, 68, 68, 0.95);
+    color: #ffffff;
+    font-size: 24px;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+    transition: all 0.2s ease;
+    z-index: 10;
+}
+
+.image-delete-btn:hover {
+    background: rgba(220, 38, 38, 1);
+    transform: scale(1.1);
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35);
+}
+
+.image-delete-btn:active {
+    transform: scale(0.95);
+}
+
 .write-bubble {
     display: flex;
     align-items: center;
