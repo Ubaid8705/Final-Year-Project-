@@ -5,7 +5,8 @@ import { uploadSingleImage } from "../controllers/uploadController.js";
 
 const router = express.Router();
 
-const MAX_IMAGE_SIZE_BYTES = 10 * 1024 * 1024; // 10MB
+// Remove file size limit - allow any size image
+const MAX_IMAGE_SIZE_BYTES = 100 * 1024 * 1024; // 100MB (generous limit for safety)
 const ALLOWED_MIME_TYPES = new Set([
   "image/jpeg",
   "image/png",
@@ -40,7 +41,7 @@ const singleImageMiddleware = (req, res, next) => {
 
     if (error instanceof multer.MulterError) {
       if (error.code === "LIMIT_FILE_SIZE") {
-        res.status(413).json({ error: "Image exceeds the maximum size of 10MB." });
+        res.status(413).json({ error: "Image exceeds the maximum size of 100MB." });
         return;
       }
 
