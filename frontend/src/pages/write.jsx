@@ -902,50 +902,9 @@ const Write = ({ postId, authorId }) => {
         slug: nextSlug || previous?.slug || null,
       }));
 
-      if (Object.prototype.hasOwnProperty.call(data, "coverImageMeta")) {
-        if (data.coverImageMeta && typeof data.coverImageMeta === 'object' && 
-            (data.coverImageMeta.displayUrl || data.coverImage)) {
-          setCoverAsset((previous) => {
-            const displayUrl =
-              data.coverImageMeta.displayUrl ||
-              data.coverImage ||
-              data.coverImageMeta.originalUrl ||
-              null;
-
-            if (!displayUrl) {
-              return null;
-            }
-
-            return {
-              ...data.coverImageMeta,
-              displayUrl,
-              originalUrl:
-                data.coverImageMeta.originalUrl ||
-                data.coverImage ||
-                displayUrl ||
-                null,
-              secureUrl:
-                data.coverImage ||
-                data.coverImageMeta.secureUrl ||
-                displayUrl ||
-                null,
-            };
-          });
-        } else {
-          setCoverAsset(null);
-        }
-      } else if (Object.prototype.hasOwnProperty.call(data, "coverImage")) {
-        // Only coverImage field present (no coverImageMeta field in response)
-        if (data.coverImage) {
-          setCoverAsset({
-            displayUrl: data.coverImage,
-            originalUrl: data.coverImage,
-            secureUrl: data.coverImage,
-          });
-        } else {
-          setCoverAsset(null);
-        }
-      }
+      // Don't update cover asset from server response - we manage it through UI
+      // The coverAsset state is the source of truth for what's displayed
+      // Server will save whatever we sent, but we don't need to sync back
 
       return data;
     },

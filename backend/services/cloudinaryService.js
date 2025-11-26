@@ -62,6 +62,11 @@ export const uploadImageBuffer = async (buffer, options = {}) => {
     context = undefined,
   } = options;
 
+  // Add eager transformation to automatically resize very large images on upload
+  const eagerTransforms = eager || [
+    { width: 2400, crop: "limit", quality: "auto", fetch_format: "auto" }
+  ];
+
   return new Promise((resolve, reject) => {
     const uploadStream = cloudinary.uploader.upload_stream(
       {
@@ -69,7 +74,7 @@ export const uploadImageBuffer = async (buffer, options = {}) => {
         public_id: publicId || filename,
         overwrite,
         resource_type: resourceType,
-        eager,
+        eager: eagerTransforms,
         tags,
         context,
         use_filename: useFilename,
