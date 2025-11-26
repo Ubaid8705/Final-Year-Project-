@@ -1209,6 +1209,7 @@ export const updatePost = async (req, res) => {
     const wasPublished = Boolean(post.isPublished);
     const body = req.body || {};
     const updates = {};
+    const unsetFields = {};
     const allowed = [
       "title",
       "subtitle",
@@ -1267,6 +1268,21 @@ export const updatePost = async (req, res) => {
         : post.coverImage;
       const metaCandidate = hasCoverMetaUpdate ? updates.coverImageMeta : post.coverImageMeta;
       updates.coverImage = resolveCoverImageValue(coverCandidate, metaCandidate);
+    }
+
+    const coverExplicitlyCleared = Object.prototype.hasOwnProperty.call(body, "coverImage")
+      && (body.coverImage === null || (typeof body.coverImage === "string" && !body.coverImage.trim()));
+
+    const metaExplicitlyCleared = hasCoverMetaUpdate && !updates.coverImageMeta;
+
+    if (coverExplicitlyCleared || updates.coverImage === null) {
+      unsetFields.coverImage = "";
+      delete updates.coverImage;
+    }
+
+    if (metaExplicitlyCleared) {
+      unsetFields.coverImageMeta = "";
+      delete updates.coverImageMeta;
     }
 
     if (!premiumAuthor && Object.prototype.hasOwnProperty.call(updates, "isPublished")) {
@@ -1343,7 +1359,19 @@ export const updatePost = async (req, res) => {
         finalDistribution === defaultDistributionMode;
     }
 
-    const updated = await Post.findByIdAndUpdate(post._id, updates, {
+    const updatePayload = {};
+    if (Object.keys(updates).length > 0) {
+      updatePayload.$set = updates;
+    }
+    if (Object.keys(unsetFields).length > 0) {
+      updatePayload.$unset = unsetFields;
+    }
+
+    if (Object.keys(updatePayload).length === 0) {
+      return res.json(hydratePost(post));
+    }
+
+    const updated = await Post.findByIdAndUpdate(post._id, updatePayload, {
       new: true,
       runValidators: true,
     }).populate("author", "username name avatar bio membershipStatus");
