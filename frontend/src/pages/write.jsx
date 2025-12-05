@@ -1693,7 +1693,6 @@ const Write = ({ postId, authorId }) => {
   };
 
   const handleCoverRemove = () => {
-    console.log('[DEBUG] handleCoverRemove called');
     setCoverAsset(null);
     setCoverUploadState({ loading: false, error: null });
     if (coverInputRef.current) {
@@ -1703,7 +1702,6 @@ const Write = ({ postId, authorId }) => {
   };
   
   const handleCoverReplaceClick = () => {
-    console.log('[DEBUG] handleCoverReplaceClick called');
     setCoverUploadState({ loading: false, error: null });
     if (coverInputRef.current) {
       coverInputRef.current.value = "";

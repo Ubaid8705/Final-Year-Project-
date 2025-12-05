@@ -1,21 +1,23 @@
-import React, { useEffect } from "react";
+import React, { useEffect, lazy, Suspense } from "react";
 import { Navigate } from "react-router-dom";
 import { useAuth } from "./contexts/AuthContext";
-import Login from "./pages/login";
-import Settings from "./pages/settings";
-import PostView from "./pages/postview";
-import Write from "./pages/write";
-import LandingPage from "./pages/landingpage";
-import TopicsPage from "./pages/topics";
-import AboutPage from "./pages/about";
-import Profile from "./pages/profile";
-import ProfileStories from "./pages/profile-stories";
-import { FollowersPage, FollowingPage } from "./pages/connections";
-import OAuthCallback from "./pages/oauth-callback";
-import Notifications from "./pages/notifications";
-import ResetPassword from "./pages/reset-password";
-import TermsOfService from "./pages/terms";
-import PlansPage from "./pages/plans";
+
+// Lazy-load route components for code-splitting
+const Login = lazy(() => import("./pages/login"));
+const Settings = lazy(() => import("./pages/settings"));
+const PostView = lazy(() => import("./pages/postview"));
+const Write = lazy(() => import("./pages/write"));
+const LandingPage = lazy(() => import("./pages/landingpage"));
+const TopicsPage = lazy(() => import("./pages/topics"));
+const AboutPage = lazy(() => import("./pages/about"));
+const Profile = lazy(() => import("./pages/profile"));
+const ProfileStories = lazy(() => import("./pages/profile-stories"));
+const Connections = lazy(() => import("./pages/connections"));
+const OAuthCallback = lazy(() => import("./pages/oauth-callback"));
+const Notifications = lazy(() => import("./pages/notifications"));
+const ResetPassword = lazy(() => import("./pages/reset-password"));
+const TermsOfService = lazy(() => import("./pages/terms"));
+const PlansPage = lazy(() => import("./pages/plans"));
 
 // Protected Route wrapper component (uses auth context)
 export function ProtectedRoute({ children }) {
@@ -49,49 +51,49 @@ export function ProtectedRoute({ children }) {
 
 // Export routes as array for App.js mapping
 export const routes = [
-  { path: "/login", element: <Login /> },
-  { path: "/reset-password", element: <ResetPassword /> },
-  { path: "/oauth-callback", element: <OAuthCallback /> },
-  { path: "/about", element: <AboutPage /> },
-  { path: "/terms", element: <TermsOfService /> },
-  { path: "/plans", element: <PlansPage /> },
+  { path: "/login", element: <Suspense fallback={<div>Loading...</div>}><Login /></Suspense> },
+  { path: "/reset-password", element: <Suspense fallback={<div>Loading...</div>}><ResetPassword /></Suspense> },
+  { path: "/oauth-callback", element: <Suspense fallback={<div>Loading...</div>}><OAuthCallback /></Suspense> },
+  { path: "/about", element: <Suspense fallback={<div>Loading...</div>}><AboutPage /></Suspense> },
+  { path: "/terms", element: <Suspense fallback={<div>Loading...</div>}><TermsOfService /></Suspense> },
+  { path: "/plans", element: <Suspense fallback={<div>Loading...</div>}><PlansPage /></Suspense> },
   {
     path: "/",
-    element: (
+      element: (
       <ProtectedRoute>
-        <LandingPage />
+        <Suspense fallback={<div>Loading...</div>}><LandingPage /></Suspense>
       </ProtectedRoute>
     ),
   },
   {
     path: "/topics",
-    element: (
+      element: (
       <ProtectedRoute>
-        <TopicsPage />
+        <Suspense fallback={<div>Loading...</div>}><TopicsPage /></Suspense>
       </ProtectedRoute>
     ),
   },
   {
     path: "/settings",
-    element: (
+      element: (
       <ProtectedRoute>
-        <Settings />
+        <Suspense fallback={<div>Loading...</div>}><Settings /></Suspense>
       </ProtectedRoute>
     ),
   },
   {
     path: "/profile",
-    element: (
+      element: (
       <ProtectedRoute>
-        <Profile />
+        <Suspense fallback={<div>Loading...</div>}><Profile /></Suspense>
       </ProtectedRoute>
     ),
   },
   {
     path: "/profile/stories",
-    element: (
+      element: (
       <ProtectedRoute>
-        <ProfileStories />
+        <Suspense fallback={<div>Loading...</div>}><ProfileStories /></Suspense>
       </ProtectedRoute>
     ),
   },
@@ -99,7 +101,7 @@ export const routes = [
     path: "/profile/followers",
     element: (
       <ProtectedRoute>
-        <FollowersPage />
+        <Suspense fallback={<div>Loading...</div>}><Connections /></Suspense>
       </ProtectedRoute>
     ),
   },
@@ -107,7 +109,7 @@ export const routes = [
     path: "/profile/following",
     element: (
       <ProtectedRoute>
-        <FollowingPage />
+        <Suspense fallback={<div>Loading...</div>}><Connections /></Suspense>
       </ProtectedRoute>
     ),
   },
@@ -115,7 +117,7 @@ export const routes = [
     path: "/u/:username",
     element: (
       <ProtectedRoute>
-        <Profile />
+        <Suspense fallback={<div>Loading...</div>}><Profile /></Suspense>
       </ProtectedRoute>
     ),
   },
@@ -123,7 +125,7 @@ export const routes = [
     path: "/u/:username/stories",
     element: (
       <ProtectedRoute>
-        <ProfileStories />
+        <Suspense fallback={<div>Loading...</div>}><ProfileStories /></Suspense>
       </ProtectedRoute>
     ),
   },
@@ -131,7 +133,7 @@ export const routes = [
     path: "/u/:username/followers",
     element: (
       <ProtectedRoute>
-        <FollowersPage />
+        <Suspense fallback={<div>Loading...</div>}><Connections /></Suspense>
       </ProtectedRoute>
     ),
   },
@@ -139,7 +141,7 @@ export const routes = [
     path: "/u/:username/following",
     element: (
       <ProtectedRoute>
-        <FollowingPage />
+        <Suspense fallback={<div>Loading...</div>}><Connections /></Suspense>
       </ProtectedRoute>
     ),
   },
@@ -147,7 +149,7 @@ export const routes = [
     path: "/notifications",
     element: (
       <ProtectedRoute>
-        <Notifications />
+        <Suspense fallback={<div>Loading...</div>}><Notifications /></Suspense>
       </ProtectedRoute>
     ),
   },
@@ -155,7 +157,7 @@ export const routes = [
     path: "/write",
     element: (
       <ProtectedRoute>
-        <Write />
+        <Suspense fallback={<div>Loading...</div>}><Write /></Suspense>
       </ProtectedRoute>
     ),
   },
@@ -163,7 +165,7 @@ export const routes = [
     path: "/post/:id",
     element: (
       <ProtectedRoute>
-        <PostView />
+        <Suspense fallback={<div>Loading...</div>}><PostView /></Suspense>
       </ProtectedRoute>
     ),
   },

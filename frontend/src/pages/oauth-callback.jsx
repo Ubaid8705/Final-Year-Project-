@@ -84,7 +84,6 @@ const OAuthCallback = () => {
         return;
       }
 
-      console.log("Parsed OAuth user:", parsedUser);
 
       const result = await completeOAuthLogin({
         token: tokenParam,
@@ -98,7 +97,6 @@ const OAuthCallback = () => {
 
       if (isMounted) {
         setStatus("success");
-        console.log("OAuth login completed successfully");
         triggerRedirect();
       }
     };
