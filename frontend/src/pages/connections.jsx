@@ -65,7 +65,19 @@ const ConnectionCard = ({ entry, currentUsername, onToggleFollow, busy }) => {
   return (
     <li className="connections-item">
       <Link to={profilePath} className="connections-avatar" aria-label={`View ${displayName}'s profile`}>
-        <img src={avatarUrl} alt="User avatar" />
+        <img
+          src={avatarUrl}
+          alt="User avatar"
+          onError={(e) => {
+            // If the image fails to load (404 or network error), use a fallback generated avatar
+            try {
+              e.currentTarget.onerror = null;
+              e.currentTarget.src = buildFallbackAvatar(displayName);
+            } catch (err) {
+              // ignore
+            }
+          }}
+        />
       </Link>
       <div className="connections-item-body">
         <div className="connections-item-title">
@@ -323,7 +335,18 @@ const ConnectionsPage = ({ mode }) => {
         </div>
         <div className="connections-owner">
           <Link to={ownerProfilePath} className="connections-owner-avatar" aria-label="View profile">
-            <img src={ownerAvatar} alt="Profile avatar" />
+            <img
+              src={ownerAvatar}
+              alt="Profile avatar"
+              onError={(e) => {
+                try {
+                  e.currentTarget.onerror = null;
+                  e.currentTarget.src = buildFallbackAvatar(ownerName);
+                } catch (err) {
+                  // ignore
+                }
+              }}
+            />
           </Link>
           <div className="connections-owner-info">
             <h1>{title}</h1>
