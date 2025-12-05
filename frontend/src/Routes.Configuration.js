@@ -12,7 +12,8 @@ const TopicsPage = lazy(() => import("./pages/topics"));
 const AboutPage = lazy(() => import("./pages/about"));
 const Profile = lazy(() => import("./pages/profile"));
 const ProfileStories = lazy(() => import("./pages/profile-stories"));
-const Connections = lazy(() => import("./pages/connections"));
+const FollowersPage = lazy(() => import("./pages/connections").then((m) => ({ default: m.FollowersPage })));
+const FollowingPage = lazy(() => import("./pages/connections").then((m) => ({ default: m.FollowingPage })));
 const OAuthCallback = lazy(() => import("./pages/oauth-callback"));
 const Notifications = lazy(() => import("./pages/notifications"));
 const ResetPassword = lazy(() => import("./pages/reset-password"));
@@ -101,7 +102,7 @@ export const routes = [
     path: "/profile/followers",
     element: (
       <ProtectedRoute>
-        <Suspense fallback={<div>Loading...</div>}><Connections /></Suspense>
+        <Suspense fallback={<div>Loading...</div>}><FollowersPage /></Suspense>
       </ProtectedRoute>
     ),
   },
@@ -109,7 +110,7 @@ export const routes = [
     path: "/profile/following",
     element: (
       <ProtectedRoute>
-        <Suspense fallback={<div>Loading...</div>}><Connections /></Suspense>
+        <Suspense fallback={<div>Loading...</div>}><FollowingPage /></Suspense>
       </ProtectedRoute>
     ),
   },
@@ -133,7 +134,7 @@ export const routes = [
     path: "/u/:username/followers",
     element: (
       <ProtectedRoute>
-        <Suspense fallback={<div>Loading...</div>}><Connections /></Suspense>
+        <Suspense fallback={<div>Loading...</div>}><FollowersPage /></Suspense>
       </ProtectedRoute>
     ),
   },
@@ -141,7 +142,7 @@ export const routes = [
     path: "/u/:username/following",
     element: (
       <ProtectedRoute>
-        <Suspense fallback={<div>Loading...</div>}><Connections /></Suspense>
+        <Suspense fallback={<div>Loading...</div>}><FollowingPage /></Suspense>
       </ProtectedRoute>
     ),
   },
