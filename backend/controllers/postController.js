@@ -4,7 +4,6 @@ import Comment from "../models/Comments.js";
 import User from "../models/User.js";
 import Relationship from "../models/Relationship.js";
 import HiddenPost from "../models/HiddenPost.js";
-import PostReport from "../models/PostReport.js";
 import UserSettings from "../models/Settings.js";
 import slugify from "../utils/slugify.js";
 import { countWords, estimateReadingTime } from "../utils/postMetrics.js";
@@ -1480,44 +1479,6 @@ export const clapPost = async (req, res) => {
     res.json({ clapCount: updated.clapCount });
   } catch (error) {
     res.status(500).json({ error: "Failed to clap post" });
-  }
-};
-
-export const reportPost = async (req, res) => {
-  try {
-    const { idOrSlug } = req.params;
-    const rawReason = req.body?.reason;
-    const rawDetails = req.body?.details;
-
-    const reason = typeof rawReason === "string" ? rawReason.trim().slice(0, 120) : "";
-    if (!reason) {
-      return res.status(400).json({ error: "A report reason is required" });
-    }
-
-    const post = await findPostByParam(idOrSlug);
-    if (!post) {
-      return res.status(404).json({ error: "Post not found" });
-    }
-
-    const details = typeof rawDetails === "string" ? rawDetails.trim().slice(0, 2000) : "";
-
-    await PostReport.findOneAndUpdate(
-      { user: req.user._id, post: post._id },
-      {
-        $set: {
-          reason,
-          details: details || undefined,
-        },
-        $setOnInsert: {
-          createdAt: new Date(),
-        },
-      },
-      { new: true, upsert: true }
-    );
-
-    res.status(201).json({ reported: true });
-  } catch (error) {
-    res.status(500).json({ error: "Failed to submit report" });
   }
 };
 

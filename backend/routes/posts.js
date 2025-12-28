@@ -8,7 +8,6 @@ import {
   clapPost,
   listAuthorPosts,
   listDrafts,
-  reportPost,
   searchPosts,
 } from "../controllers/postController.js";
 import { authenticate, optionalAuthenticate } from "../middleware/authMiddleware.js";
@@ -24,6 +23,5 @@ router.post("/", authenticate, createPost);
 router.patch("/:idOrSlug", authenticate, updatePost);
 router.delete("/:idOrSlug", authenticate, deletePost);
 router.post("/:idOrSlug/clap", authenticate, clapPost);
-router.post("/:idOrSlug/report", authenticate, reportPost);
 
 export default router;

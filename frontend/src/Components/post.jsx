@@ -400,62 +400,6 @@ const Post = ({
     }
   }, [postUrl, displayTitle, displayAuthor, handleCopyLink, onActionFeedback]);
 
-  const handleReport = useCallback(async (event) => {
-    event?.stopPropagation();
-
-    if (!postId) {
-      onActionFeedback?.("Unable to report this story.", "error");
-      setMenuOpen(false);
-      return;
-    }
-
-    if (!token) {
-      onActionFeedback?.("Sign in to report stories.", "error");
-      setMenuOpen(false);
-      return;
-    }
-
-    let reason = "Inappropriate content";
-
-    if (typeof window !== "undefined") {
-      const input = window.prompt(
-        "Tell us briefly why you are reporting this story:",
-        reason
-      );
-
-      if (input === null) {
-        setMenuOpen(false);
-        return;
-      }
-
-      reason = input.trim() || reason;
-    }
-
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/posts/${postId}/report`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ reason }),
-      });
-
-      const payload = await response.json().catch(() => ({}));
-
-      if (!response.ok) {
-        throw new Error(payload.error || "Unable to submit report right now.");
-      }
-
-      onActionFeedback?.("Thanks for letting us know. We'll review this story.", "info");
-    } catch (error) {
-      console.error(error);
-      onActionFeedback?.(error.message || "Unable to submit report right now.", "error");
-    } finally {
-      setMenuOpen(false);
-    }
-  }, [postId, token, onActionFeedback]);
-
   const handleEditPost = useCallback(
     (event) => {
       event?.stopPropagation();
@@ -669,11 +613,6 @@ const Post = ({
                   <li role="presentation">
                     <button type="button" role="menuitem" onClick={handleShare}>
                       Share story
-                    </button>
-                  </li>
-                  <li role="presentation">
-                    <button type="button" role="menuitem" onClick={handleReport}>
-                      Report story
                     </button>
                   </li>
                 </ul>
