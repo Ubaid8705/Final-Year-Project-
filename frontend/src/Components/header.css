@@ -40,7 +40,9 @@
   background: rgba(242, 242, 242, 0.6);
   border: 1px solid rgba(0, 0, 0, 0.08);
   box-sizing: border-box;
-  width: 100%;
+  margin: 0 auto;
+  width: auto;
+  flex: 0 0 auto;
   max-width: 420px;
   overflow: visible;
   max-height: 50px;
@@ -50,7 +52,7 @@
 .search-bar input {
   min-width: 0;
   max-width: 80%;
-  margin-top: 4%;
+  margin-top: 0;
   height: 36px;
   border-radius: 6px;
   outline: none;
