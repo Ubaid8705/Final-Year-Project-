@@ -1,5 +1,5 @@
 import express from 'express';
-import { googleLogin, googleCallback, facebookLogin, facebookCallback, logout } from '../controllers/authController.js';
+import { googleLogin, googleCallback, logout } from '../controllers/authController.js';
 import {
 	register,
 	login,
@@ -13,8 +13,6 @@ const router = express.Router();
 // Google OAuth routes
 router.get('/google', googleLogin);
 router.get('/google/callback', googleCallback);
-router.get('/facebook', facebookLogin);
-router.get('/facebook/callback', facebookCallback);
 
 // Email signup / signin routes
 router.post('/register', register);

@@ -52,26 +52,6 @@ export const googleCallback = (req, res, next) => {
   })(req, res, next);
 };
 
-export const facebookLogin = passport.authenticate('facebook', {
-  scope: ['email'],
-  authType: 'rerequest',
-});
-
-export const facebookCallback = (req, res, next) => {
-  passport.authenticate('facebook', { session: false }, (err, user) => {
-    if (err) {
-      return res.redirect(`${process.env.CLIENT_URL}/login?error=${err.message}`);
-    }
-
-    if (!user) {
-      return res.redirect(`${process.env.CLIENT_URL}/login?error=Authentication failed`);
-    }
-
-    const redirectUrl = buildOAuthRedirectUrl(user);
-    res.redirect(redirectUrl);
-  })(req, res, next);
-};
-
 // Handle user logout
 export const logout = (req, res) => {
   req.logout();

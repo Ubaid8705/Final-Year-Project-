@@ -32,23 +32,6 @@ const GoogleIcon = ({ className }) => (
   </svg>
 );
 
-const FacebookIcon = ({ className }) => (
-  <svg
-    className={className}
-    viewBox="0 0 18 18"
-    xmlns="http://www.w3.org/2000/svg"
-    role="img"
-    aria-hidden="true"
-    focusable="false"
-  >
-    <circle cx="9" cy="9" r="9" fill="#1877F2" />
-    <path
-      d="M10.296 14.25v-4.29h1.443L12 7.875h-1.704V6.75c0-.496.164-.875.875-.875H12V4.312c-.253-.032-.823-.083-1.564-.083-1.84 0-2.965 1.024-2.965 2.88V7.875H6.25V9.96h1.22v4.29h2.826z"
-      fill="#FFF"
-    />
-  </svg>
-);
-
 const INITIAL_FORM = {
   name: "",
   username: "",
@@ -351,10 +334,6 @@ const Login = () => {
           <GoogleIcon className="social-btn__icon" />
           <span>Sign in with Google</span>
         </button>
-        <button className="social-btn facebook" onClick={() => redirectToOAuth("facebook")}>
-          <FacebookIcon className="social-btn__icon" />
-          <span>Sign in with Facebook</span>
-        </button>
         <button
           className="email-btn"
           onClick={() => updateView("email-signin")}
@@ -375,10 +354,6 @@ const Login = () => {
         <button className="social-btn google" onClick={() => redirectToOAuth("google")}>
           <GoogleIcon className="social-btn__icon" />
           <span>Sign up with Google</span>
-        </button>
-        <button className="social-btn facebook" onClick={() => redirectToOAuth("facebook")}>
-          <FacebookIcon className="social-btn__icon" />
-          <span>Sign up with Facebook</span>
         </button>
         <button 
           className="email-btn"
